@@ -1,0 +1,1212 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>크레이지 워터 아케이드</title>
+<style>
+* { margin:0; padding:0; box-sizing:border-box; touch-action:none; }
+body {
+  background:#1a1a2e;
+  display:flex; flex-direction:column;
+  align-items:center; justify-content:flex-start;
+  min-height:100vh; min-height:100dvh;
+  font-family:'Arial',sans-serif; color:#fff;
+  overflow:hidden;
+}
+h1 { font-size:26px; margin-bottom:8px; color:#00d4ff; text-shadow:0 0 10px #00d4ff88; letter-spacing:2px; }
+
+#hud {
+  display:flex; justify-content:space-between; align-items:center;
+  width:660px; max-width:100vw; margin-bottom:6px; padding:7px 14px;
+  background:#16213e; border-radius:8px; border:1px solid #0f3460;
+}
+.player-status { display:flex; align-items:center; gap:8px; font-size:14px; font-weight:bold; }
+.p1-label { color:#4a9eff; }
+.p2-label { color:#ff6b6b; }
+.status-dot { width:11px; height:11px; border-radius:50%; display:inline-block; }
+.alive   { background:#2ecc71; box-shadow:0 0 5px #2ecc71; }
+.trapped { background:#00bfff; box-shadow:0 0 6px #00bfff; animation:trappedPulse 0.5s infinite alternate; }
+.dead    { background:#555; }
+@keyframes trappedPulse { from{opacity:1} to{opacity:0.3} }
+#mapLabel { font-size:13px; color:#aaa; }
+
+#canvas {
+  border:3px solid #0f3460; border-radius:4px;
+  box-shadow:0 0 30px #00d4ff44; display:block;
+  image-rendering:pixelated; max-width:100%;
+}
+#controls { margin-top:8px; font-size:11px; color:#666; text-align:center; line-height:1.8; }
+
+/* OVERLAY (game over) */
+#overlay {
+  position:fixed; top:0;left:0;right:0;bottom:0;
+  background:rgba(0,0,0,0.78);
+  display:flex; flex-direction:column; align-items:center; justify-content:center;
+  z-index:20;
+}
+#overlay h2 { font-size:40px; margin-bottom:12px; text-shadow:0 0 20px currentColor; }
+#overlay p { font-size:16px; color:#aaa; margin-bottom:20px; }
+.ovr-btn {
+  padding:11px 32px; font-size:16px; border:none; border-radius:8px;
+  cursor:pointer; font-weight:bold; transition:transform 0.1s; margin:6px;
+}
+.ovr-btn:hover { transform:scale(1.05); }
+#restartBtn { background:#00d4ff; color:#000; }
+#homeBtn    { background:#334; color:#aaa; border:1px solid #556; }
+
+/* HOME SCREEN */
+#homeScreen {
+  position:fixed; top:0;left:0;right:0;bottom:0;
+  background:linear-gradient(135deg,#0a0a1a,#1a1a3a,#0d2040);
+  display:flex; flex-direction:column; align-items:center; justify-content:center;
+  z-index:30;
+}
+#homeScreen h1 {
+  font-size:38px; margin-bottom:6px;
+  background:linear-gradient(90deg,#00d4ff,#aa88ff,#ff6baa);
+  -webkit-background-clip:text; -webkit-text-fill-color:transparent;
+  filter:drop-shadow(0 0 12px #00d4ff88);
+}
+#homeScreen .subtitle { font-size:14px; color:#888; margin-bottom:36px; }
+.map-cards { display:flex; gap:20px; margin-bottom:30px; flex-wrap:wrap; justify-content:center; }
+.map-card {
+  width:160px; padding:18px 14px; border-radius:14px;
+  cursor:pointer; border:2px solid transparent;
+  transition:border-color 0.2s, transform 0.15s, box-shadow 0.2s;
+  text-align:center; position:relative; overflow:hidden;
+}
+.map-card:hover, .map-card.selected { transform:translateY(-6px); box-shadow:0 8px 28px rgba(0,0,0,0.5); }
+.map-card.village { background:linear-gradient(160deg,#1a3a0e,#2d5a1b,#3a7020); }
+.map-card.village:hover, .map-card.village.selected { border-color:#7ddf40; box-shadow:0 8px 28px #2a6010aa; }
+.map-card.ice    { background:linear-gradient(160deg,#0d2a42,#1a4a6a,#2060a0); }
+.map-card.ice:hover, .map-card.ice.selected    { border-color:#88ddff; box-shadow:0 8px 28px #0060aaaa; }
+.map-card.space  { background:linear-gradient(160deg,#050510,#0a0a1a,#0f0f28); }
+.map-card.space:hover, .map-card.space.selected  { border-color:#aa88ff; box-shadow:0 8px 28px #440088aa; }
+.map-card .map-icon { font-size:36px; margin-bottom:8px; }
+.map-card .map-name { font-size:16px; font-weight:bold; margin-bottom:4px; }
+.map-card .map-desc { font-size:11px; color:#ccc; line-height:1.4; }
+.map-card .map-tag {
+  position:absolute; top:8px; right:8px;
+  font-size:10px; padding:2px 7px; border-radius:10px;
+  background:rgba(255,255,255,0.15); color:#fff;
+}
+#homeHint { font-size:13px; color:#666; animation:blink 1.8s infinite; text-align:center; padding:0 16px; }
+@keyframes blink { 0%,100%{opacity:1} 50%{opacity:0.3} }
+.hidden { display:none !important; }
+.star { position:absolute; background:#fff; border-radius:50%; animation:twinkle 2s infinite; }
+@keyframes twinkle { 0%,100%{opacity:1} 50%{opacity:0.2} }
+
+/* WAITING OVERLAY */
+#waitingOverlay {
+  position:fixed; top:0;left:0;right:0;bottom:0;
+  background:rgba(0,0,0,0.75);
+  display:flex; flex-direction:column; align-items:center; justify-content:center;
+  z-index:35;
+}
+#waitingOverlay h2 { font-size:24px; color:#00d4ff; margin-bottom:16px; }
+#waitingOverlay p { font-size:15px; color:#aaa; margin:6px 0; text-align:center; }
+#waitingURL { font-size:18px; color:#fff; font-weight:bold; background:#0f3460; padding:10px 20px; border-radius:8px; margin-top:12px; letter-spacing:1px; }
+
+/* PLAYER PICK SCREEN */
+#pickScreen {
+  position:fixed; top:0;left:0;right:0;bottom:0;
+  background:linear-gradient(135deg,#0a0a1a,#1a1a3a,#0d2040);
+  display:flex; flex-direction:column; align-items:center; justify-content:center;
+  z-index:40; gap:20px;
+}
+#pickScreen h2 { font-size:28px; color:#00d4ff; text-shadow:0 0 12px #00d4ff88; }
+#pickScreen .pick-sub { font-size:14px; color:#666; margin-top:-10px; }
+.pick-btns { display:flex; gap:24px; }
+.pick-btn {
+  width:160px; padding:28px 0; border-radius:16px; border:2px solid transparent;
+  cursor:pointer; font-size:22px; font-weight:bold; text-align:center;
+  transition:transform 0.15s, box-shadow 0.15s, opacity 0.2s;
+  display:flex; flex-direction:column; align-items:center; gap:10px;
+  background:none;
+}
+.pick-btn .pick-icon { font-size:48px; }
+.pick-btn.p1 { border-color:#4a9eff; color:#4a9eff; background:rgba(74,158,255,0.08); }
+.pick-btn.p1:hover:not(:disabled) { transform:translateY(-4px); box-shadow:0 8px 24px #4a9eff44; }
+.pick-btn.p2 { border-color:#ff6b6b; color:#ff6b6b; background:rgba(255,107,107,0.08); }
+.pick-btn.p2:hover:not(:disabled) { transform:translateY(-4px); box-shadow:0 8px 24px #ff6b6b44; }
+.pick-btn:disabled { opacity:0.35; cursor:not-allowed; }
+.pick-btn .pick-taken { font-size:12px; color:#888; margin-top:4px; }
+#pickLocal {
+  margin-top:4px; font-size:13px; color:#555; cursor:pointer;
+  background:none; border:none; text-decoration:underline;
+}
+#pickLocal:hover { color:#aaa; }
+#pickURL { font-size:13px; color:#444; margin-top:8px; text-align:center; }
+#pickURL span { color:#888; font-weight:bold; }
+
+/* LOADING SCREEN */
+#loadingScreen {
+  position:fixed; top:0;left:0;right:0;bottom:0;
+  background:#04040e;
+  display:flex; flex-direction:column; align-items:center; justify-content:center;
+  z-index:50;
+}
+#loadingScreen h2 { color:#00d4ff; font-size:26px; margin-bottom:24px; letter-spacing:2px; }
+#loadBar { width:300px; height:8px; background:#1a1a3a; border-radius:4px; overflow:hidden; border:1px solid #0f3460; }
+#loadFill { height:100%; background:linear-gradient(90deg,#00d4ff,#aa88ff); border-radius:4px; width:0%; transition:width 0.15s; }
+#loadTip  { margin-top:14px; font-size:12px; color:#555; }
+
+/* MOBILE TOUCH CONTROLS */
+#touchControls {
+  display:none;
+  position:relative; width:100%; height:160px;
+  background:rgba(0,0,0,0.3);
+  user-select:none;
+}
+#joystickArea {
+  position:absolute; left:30px; bottom:20px;
+  width:110px; height:110px;
+}
+#joystickBase {
+  position:absolute; left:0; top:0; width:110px; height:110px;
+  border-radius:50%; border:3px solid rgba(255,255,255,0.35);
+  background:rgba(255,255,255,0.06);
+}
+#joystickHandle {
+  position:absolute; left:30px; top:30px;
+  width:50px; height:50px; border-radius:50%;
+  background:rgba(255,255,255,0.45);
+  transition:left 0.05s, top 0.05s;
+  pointer-events:none;
+}
+#bombBtn {
+  position:absolute; right:30px; bottom:20px;
+  width:80px; height:80px; border-radius:50%;
+  background:#ff4444; border:none; font-size:30px;
+  display:flex; align-items:center; justify-content:center;
+  cursor:pointer; box-shadow:0 0 16px #ff444488;
+  -webkit-tap-highlight-color:transparent;
+}
+#bombBtn:active { background:#cc0000; transform:scale(0.92); }
+
+/* P2 waiting label on home */
+#p2WaitLabel {
+  position:absolute; top:0;left:0;right:0;bottom:0;
+  background:rgba(0,0,0,0.7);
+  display:flex; align-items:center; justify-content:center;
+  font-size:15px; color:#aaa; text-align:center; padding:20px;
+  z-index:5; border-radius:14px;
+}
+
+/* Mobile canvas scaling */
+@media (max-width: 700px) {
+  #canvas { width:100vw !important; height:auto !important; }
+  #hud { width:100%; border-radius:0; }
+  h1 { font-size:18px; }
+  #touchControls { display:flex; }
+  #controls { display:none; }
+}
+</style>
+</head>
+<body>
+
+<!-- LOADING -->
+<div id="loadingScreen">
+  <h2>💧 에셋 로딩 중...</h2>
+  <div id="loadBar"><div id="loadFill"></div></div>
+  <p id="loadTip">스프라이트 불러오는 중</p>
+</div>
+
+<!-- PLAYER PICK SCREEN -->
+<div id="pickScreen" class="hidden">
+  <h2>👤 플레이어 선택</h2>
+  <p class="pick-sub">나는 누구로 플레이할까요?</p>
+  <div class="pick-btns">
+    <button class="pick-btn p1" id="pickP1" onclick="claimSlot(0)">
+      <span class="pick-icon">🐰</span>
+      <span>Player 1</span>
+      <span class="pick-taken" id="takenLabel0"></span>
+    </button>
+    <button class="pick-btn p2" id="pickP2" onclick="claimSlot(1)">
+      <span class="pick-icon">😈</span>
+      <span>Player 2</span>
+      <span class="pick-taken" id="takenLabel1"></span>
+    </button>
+  </div>
+  <button id="pickLocal" onclick="claimBoth()">혼자 2인용으로 하기 (WASD + 방향키)</button>
+  <p id="pickURL"></p>
+</div>
+
+<!-- WAITING OVERLAY -->
+<div id="waitingOverlay" class="hidden">
+  <h2>🔗 상대방 접속 대기 중...</h2>
+  <p>같은 WiFi에서 이 주소로 접속하세요:</p>
+  <div id="waitingURL"></div>
+  <p style="margin-top:16px;font-size:13px;color:#555">또는 이 기기만으로 로컬 2인용으로 플레이</p>
+</div>
+
+<!-- HOME SCREEN -->
+<div id="homeScreen" class="hidden">
+  <h1>💧 크레이지 워터 아케이드</h1>
+  <p class="subtitle">2인용 물풍선 배틀 게임</p>
+  <div class="map-cards">
+    <div class="map-card village selected" data-map="village" id="card-village">
+      <span class="map-tag">기본</span>
+      <div class="map-icon">🌿</div>
+      <div class="map-name">빌리지</div>
+      <div class="map-desc">평화로운 마을<br>기본 맵</div>
+    </div>
+    <div class="map-card ice" data-map="ice" id="card-ice">
+      <span class="map-tag">특수</span>
+      <div class="map-icon">❄️</div>
+      <div class="map-name">아이스</div>
+      <div class="map-desc">미끄러운 얼음판<br>관성 이동!</div>
+    </div>
+    <div class="map-card space" data-map="space" id="card-space">
+      <span class="map-tag">위험</span>
+      <div class="map-icon">🚀</div>
+      <div class="map-name">우주</div>
+      <div class="map-desc">맵이 점점 좁아진다<br>생존하라!</div>
+    </div>
+    <!-- P2 overlay on cards -->
+    <div id="p2WaitLabel" class="hidden">상대방이 맵을 선택 중입니다...</div>
+  </div>
+  <p id="homeHint">클릭하거나 ← → 로 선택 후 Enter</p>
+</div>
+
+<!-- GAME UI -->
+<h1 id="gameTitle" class="hidden">💧 크레이지 워터 아케이드</h1>
+<div id="hud" class="hidden">
+  <div class="player-status">
+    <span class="status-dot alive" id="dot1"></span>
+    <span class="p1-label">Player 1</span>
+    <span id="p1info" style="font-size:12px;color:#888"></span>
+  </div>
+  <div id="mapLabel">빌리지</div>
+  <div class="player-status">
+    <span id="p2info" style="font-size:12px;color:#888"></span>
+    <span class="p2-label">Player 2</span>
+    <span class="status-dot alive" id="dot2"></span>
+  </div>
+</div>
+<canvas id="canvas" class="hidden"></canvas>
+<div id="controls" class="hidden">
+  P1: W/A/S/D 이동 | Space 물풍선 &nbsp;&nbsp; P2: 방향키 이동 | Enter 물풍선 &nbsp;&nbsp; R: 재시작
+</div>
+
+<!-- TOUCH CONTROLS (mobile) -->
+<div id="touchControls">
+  <div id="joystickArea">
+    <div id="joystickBase"></div>
+    <div id="joystickHandle"></div>
+  </div>
+  <button id="bombBtn">💣</button>
+</div>
+
+<!-- GAME OVER OVERLAY -->
+<div id="overlay" class="hidden">
+  <h2 id="winnerText"></h2>
+  <p id="winnerSub">물줄기에 맞아 쓰러졌습니다!</p>
+  <div>
+    <button class="ovr-btn" id="restartBtn">다시 시작 (R)</button>
+    <button class="ovr-btn" id="homeBtn">맵 선택으로</button>
+  </div>
+</div>
+
+<script>
+// =============================================
+// Canvas setup
+// =============================================
+const COLS=15, ROWS=13, TILE=44;
+const CANVAS_W=COLS*TILE, CANVAS_H=ROWS*TILE;
+const T_EMPTY=0, T_WALL=1, T_BOX=2;
+const EXPLODE_DURATION=500, BALLOON_DELAY=3000;
+const TRAP_DURATION=7000, ESCAPE_NEEDED=20;
+
+const canvas=document.getElementById('canvas');
+const ctx=canvas.getContext('2d');
+canvas.width=CANVAS_W; canvas.height=CANVAS_H;
+
+// =============================================
+// Sprite system
+// =============================================
+const SPRITES={};
+const SPRITE_BASE='/sprites/';
+const SPRITE_PATHS={
+  'char_walk_front': 'character/walk-front.png',
+  'char_walk_back':  'character/walk-back.png',
+  'char_walk_left':  'character/walk-left.png',
+  'char_walk_right': 'character/walk-right.png',
+  'char_idle_front': 'character/idle-front.png',
+  'char_idle_back':  'character/idle-back.png',
+  'char_idle_left':  'character/idle-left.png',
+  'char_idle_right': 'character/idle-right.png',
+  'char_death':      'character/death-front.png',
+  'char_win':        'character/win-front.png',
+  'explosion':       'fxs/explosion.png',
+  'sparks':          'fxs/sparks.png',
+  'dynamite':        'items/dynamite.png',
+  'box':             'items/box.png',
+  'terrain_grass':   'terrain/grass.png',
+  'terrain_ground':  'terrain/ground.png',
+  'terrain_rock':    'terrain/rock.png',
+  'terrain_wall':    'terrain/wall.png',
+  'terrain_wood':    'terrain/wood.png',
+};
+
+function preloadSprites(){
+  const keys=Object.keys(SPRITE_PATHS);
+  let done=0;
+  const fill=document.getElementById('loadFill');
+  return new Promise(resolve=>{
+    keys.forEach(key=>{
+      const img=new Image();
+      const finish=()=>{ done++; fill.style.width=(done/keys.length*100)+'%'; if(done===keys.length) setTimeout(resolve,200); };
+      img.onload=()=>{ SPRITES[key]=img; finish(); };
+      img.onerror=()=>{ SPRITES[key]=null; finish(); };
+      img.src=SPRITE_BASE+SPRITE_PATHS[key];
+    });
+  });
+}
+
+function spr(key,sx,sy,sw,sh,dx,dy,dw,dh){
+  if(!SPRITES[key]) return false;
+  ctx.drawImage(SPRITES[key],sx,sy,sw,sh,dx,dy,dw,dh);
+  return true;
+}
+
+function tileVar(r,c,max){ return (r*13+c*7)%max; }
+
+// =============================================
+// Game state (display only, set by server)
+// =============================================
+let gs={ map:null, players:[], balloons:[], explosions:[], items:[], over:false, winner:-1, mapId:null,
+         spacePhase:0, spaceDanger:false, spaceDangerAt:0, spaceWallLayer:0, stars:[] };
+
+// =============================================
+// WebSocket + session
+// =============================================
+let myPlayerIdx = -1;
+let localMode = false;   // single PC → controls both players
+let isMyMobile = /Mobile|Android|iPhone|iPad/i.test(navigator.userAgent);
+let serverTimeOffset = 0; // Date.now() - serverTime
+let gameStarted = false;
+let homeCardIdx = 0;
+const MAP_ORDER = ['village','ice','space'];
+let lanIP = location.host;
+let pendingPick = null; // pickPlayer 메시지 (로딩 완료 후 표시)
+
+const ws = new WebSocket(`ws://${location.host}`);
+
+ws.onopen = () => {};
+
+ws.onmessage = (e) => {
+  const msg = JSON.parse(e.data);
+
+  if (msg.type === 'pickPlayer') {
+    // 스프라이트 로딩 완료 후 pickScreen 표시 (preloadSprites().then 에서 처리)
+    if (msg.lanIP) lanIP = msg.lanIP + ':3000';
+    pendingPick = msg; // 로딩 완료 후 처리
+    updatePickUI(msg.taken);
+
+  } else if (msg.type === 'slots') {
+    // 다른 플레이어가 슬롯 선택/해제 시 UI 갱신
+    if (msg.lanIP) lanIP = msg.lanIP + ':3000';
+    updatePickUI(msg.taken);
+
+  } else if (msg.type === 'claimFail') {
+    // 이미 선택된 자리 — 버튼 비활성화는 slots 메시지로 처리됨
+    alert(msg.reason || '이미 선택된 자리입니다.');
+
+  } else if (msg.type === 'assign') {
+    myPlayerIdx = msg.playerIdx;
+    localMode = msg.localMode || false;
+    if (msg.lanIP) lanIP = msg.lanIP + ':3000';
+
+    // 픽 화면 닫기
+    document.getElementById('pickScreen').classList.add('hidden');
+
+    if (localMode) {
+      // 혼자 2인용 → 바로 홈화면
+      showScreen('home');
+    } else {
+      // 상대방 대기 화면 표시
+      document.getElementById('waitingOverlay').classList.remove('hidden');
+      document.getElementById('waitingURL').textContent = 'http://' + lanIP;
+      if (myPlayerIdx === 0) {
+        document.querySelector('#waitingOverlay h2').textContent = '🔗 상대방 접속 대기 중...';
+        document.querySelector('#waitingOverlay p').textContent = '같은 WiFi에서 이 주소로 접속하세요:';
+      } else {
+        document.querySelector('#waitingOverlay h2').textContent = '✅ Player 2 접속 완료!';
+        document.querySelector('#waitingOverlay p').textContent = 'P1이 맵을 선택하면 게임이 시작됩니다.';
+      }
+    }
+
+  } else if (msg.type === 'ready') {
+    document.getElementById('waitingOverlay').classList.add('hidden');
+    document.getElementById('p2WaitLabel').classList.add('hidden');
+    // 홈화면 표시
+    showScreen('home');
+
+  } else if (msg.type === 'full') {
+    document.getElementById('loadingScreen').classList.add('hidden');
+    document.getElementById('pickScreen').classList.add('hidden');
+    document.getElementById('waitingOverlay').classList.remove('hidden');
+    document.getElementById('waitingURL').textContent = '방이 가득 찼습니다.';
+    document.querySelector('#waitingOverlay h2').textContent = '❌ 접속 불가';
+    document.querySelector('#waitingOverlay p').textContent = msg.message;
+
+  } else if (msg.type === 'state') {
+    applyState(msg);
+  }
+};
+
+ws.onclose = () => {
+  // Try to reconnect or show message
+};
+
+// =============================================
+// applyState: replace gs from server
+// =============================================
+function applyState(msg) {
+  serverTimeOffset = Date.now() - msg.serverTime;
+  const offset = serverTimeOffset;
+
+  gs.players = msg.players;
+  gs.balloons = msg.balloons.map(b => ({ ...b, explodeAt: b.explodeAt + offset }));
+  gs.explosions = msg.explosions.map(e => ({ ...e, endTime: e.endTime + offset }));
+  gs.items = msg.items;
+  gs.over = msg.over;
+  gs.winner = msg.winner;
+  gs.spacePhase = msg.spacePhase || 0;
+  gs.spaceDanger = msg.spaceDanger || false;
+  gs.spaceDangerAt = (msg.spaceDangerAt || 0) + offset;
+  gs.spaceWallLayer = msg.spaceWallLayer || 0;
+
+  if (msg.map) {
+    gs.map = msg.map;
+    if (!gs.stars || gs.stars.length === 0) {
+      gs.stars = [];
+      for (let i = 0; i < 60; i++) gs.stars.push({ x: Math.random()*CANVAS_W, y: Math.random()*CANVAS_H, r: Math.random()*1.5+0.5, b: Math.random() });
+    }
+  }
+
+  if (msg.mapId && msg.mapId !== gs.mapId) {
+    gs.mapId = msg.mapId;
+    gs.stars = [];
+    for (let i = 0; i < 60; i++) gs.stars.push({ x: Math.random()*CANVAS_W, y: Math.random()*CANVAS_H, r: Math.random()*1.5+0.5, b: Math.random() });
+    document.getElementById('mapLabel').textContent = { village:'🌿 빌리지', ice:'❄️ 아이스', space:'🚀 우주' }[msg.mapId] || '';
+  }
+  if (!gs.mapId) gs.mapId = msg.mapId;
+
+  // Transition to game screen when mapId arrives
+  if (gs.mapId && !gameStarted) {
+    gameStarted = true;
+    showScreen('game');
+    updateDots();
+  }
+  if (gameStarted) {
+    updateDots();
+    updateHUDStats();
+  }
+
+  if (msg.over) {
+    if (!document.getElementById('overlay').classList.contains('hidden') === false) {
+      showGameOver(msg.winner);
+    }
+    showGameOver(msg.winner);
+  }
+}
+
+function updateDots() {
+  if (!gs.players.length) return;
+  const p1 = gs.players[0], p2 = gs.players[1];
+  if (p1) {
+    const d = document.getElementById('dot1');
+    d.className = 'status-dot ' + (p1.alive ? (p1.trapped ? 'trapped' : 'alive') : 'dead');
+  }
+  if (p2) {
+    const d = document.getElementById('dot2');
+    d.className = 'status-dot ' + (p2.alive ? (p2.trapped ? 'trapped' : 'alive') : 'dead');
+  }
+}
+
+function updateHUDStats() {
+  const p1 = gs.players[0], p2 = gs.players[1];
+  if (p1) document.getElementById('p1info').textContent = p1.alive ? `💣${p1.maxBalloons} 🔥${p1.balloonRange}` : '';
+  if (p2) document.getElementById('p2info').textContent = p2.alive ? `💣${p2.maxBalloons} 🔥${p2.balloonRange}` : '';
+}
+
+function showGameOver(winner) {
+  const ovr = document.getElementById('overlay');
+  if (!ovr.classList.contains('hidden')) return;
+  const txt = document.getElementById('winnerText');
+  const sub = document.getElementById('winnerSub');
+  if (winner === -1) {
+    txt.style.color = '#fff'; txt.textContent = '무승부!';
+    sub.textContent = '두 플레이어 모두 쓰러졌습니다!';
+  } else {
+    const p = gs.players[winner];
+    txt.style.color = p ? p.color : '#fff';
+    txt.textContent = `Player ${winner + 1} 승리! 🎉`;
+    sub.textContent = '물줄기에 맞아 쓰러졌습니다!';
+  }
+  ovr.classList.remove('hidden');
+}
+
+// =============================================
+// Player pick screen
+// =============================================
+function updatePickUI(taken) {
+  const b0 = document.getElementById('pickP1');
+  const b1 = document.getElementById('pickP2');
+  const l0 = document.getElementById('takenLabel0');
+  const l1 = document.getElementById('takenLabel1');
+  b0.disabled = taken[0];
+  b1.disabled = taken[1];
+  l0.textContent = taken[0] ? '이미 선택됨' : '';
+  l1.textContent = taken[1] ? '이미 선택됨' : '';
+  // URL 안내
+  document.getElementById('pickURL').innerHTML =
+    `같은 WiFi 상대방: <span>http://${lanIP}</span>`;
+}
+
+function claimSlot(idx) {
+  if (ws.readyState !== WebSocket.OPEN) return;
+  ws.send(JSON.stringify({ type: 'claim', playerIdx: idx }));
+}
+
+function claimBoth() {
+  if (ws.readyState !== WebSocket.OPEN) return;
+  ws.send(JSON.stringify({ type: 'claimBoth' }));
+}
+
+// =============================================
+// Screen management
+// =============================================
+function showScreen(name) {
+  const home = document.getElementById('homeScreen');
+  const title = document.getElementById('gameTitle');
+  const hud = document.getElementById('hud');
+  const cv = document.getElementById('canvas');
+  const ctrl = document.getElementById('controls');
+  const touch = document.getElementById('touchControls');
+  if (name === 'home') {
+    home.classList.remove('hidden');
+    title.classList.add('hidden');
+    hud.classList.add('hidden');
+    cv.classList.add('hidden');
+    ctrl.classList.add('hidden');
+    touch.style.display = 'none';
+    document.getElementById('overlay').classList.add('hidden');
+    gameStarted = false;
+  } else {
+    home.classList.add('hidden');
+    document.getElementById('waitingOverlay').classList.add('hidden');
+    title.classList.remove('hidden');
+    hud.classList.remove('hidden');
+    cv.classList.remove('hidden');
+    ctrl.classList.remove('hidden');
+    // Show touch controls if mobile
+    if (isMyMobile) touch.style.display = 'flex';
+  }
+}
+
+// =============================================
+// Home screen
+// =============================================
+(function createStars(){
+  const home = document.getElementById('homeScreen');
+  for (let i = 0; i < 80; i++) {
+    const s = document.createElement('div');
+    s.className = 'star';
+    const sz = Math.random()*2+1;
+    s.style.cssText = `width:${sz}px;height:${sz}px;left:${Math.random()*100}%;top:${Math.random()*100}%;animation-delay:${Math.random()*2}s;animation-duration:${1.5+Math.random()*2}s;opacity:${0.3+Math.random()*0.7}`;
+    home.appendChild(s);
+  }
+})();
+
+function selectMap(mapId) {
+  // Only P1 or localMode can select map
+  if (myPlayerIdx !== 0 && !localMode) return;
+  currentSelectedMap = mapId;
+  homeCardIdx = MAP_ORDER.indexOf(mapId);
+  highlightCard();
+  ws.send(JSON.stringify({ type: 'selectMap', map: mapId }));
+}
+
+function highlightCard() {
+  document.querySelectorAll('.map-card').forEach((c, i) => c.classList.toggle('selected', i === homeCardIdx));
+}
+
+let currentSelectedMap = 'village';
+
+document.querySelectorAll('.map-card').forEach(card => {
+  card.addEventListener('click', () => selectMap(card.dataset.map));
+});
+
+// =============================================
+// Input handling
+// =============================================
+// currentKeys[playerIdx] = {up,down,left,right,bomb}
+const currentKeys = [
+  { up:false, down:false, left:false, right:false, bomb:false },
+  { up:false, down:false, left:false, right:false, bomb:false },
+];
+
+function sendInput(pidx) {
+  if (ws.readyState !== WebSocket.OPEN) return;
+  ws.send(JSON.stringify({ type:'input', playerIdx:pidx, keys:currentKeys[pidx] }));
+}
+
+function setKey(pidx, keyName, val) {
+  if (currentKeys[pidx][keyName] === val) return;
+  currentKeys[pidx][keyName] = val;
+  sendInput(pidx);
+}
+
+document.addEventListener('keydown', e => {
+  // Home screen navigation
+  if (!document.getElementById('homeScreen').classList.contains('hidden')) {
+    if (e.key === 'ArrowLeft') { homeCardIdx = (homeCardIdx-1+3)%3; highlightCard(); e.preventDefault(); }
+    if (e.key === 'ArrowRight') { homeCardIdx = (homeCardIdx+1)%3; highlightCard(); e.preventDefault(); }
+    if (e.key === 'Enter') { selectMap(MAP_ORDER[homeCardIdx]); e.preventDefault(); }
+    return;
+  }
+
+  if (!e.repeat) {
+    // P1: WASD + Space
+    if (localMode || myPlayerIdx === 0) {
+      if (e.code === 'KeyW') setKey(0, 'up', true);
+      if (e.code === 'KeyS') setKey(0, 'down', true);
+      if (e.code === 'KeyA') setKey(0, 'left', true);
+      if (e.code === 'KeyD') setKey(0, 'right', true);
+      if (e.code === 'Space') { e.preventDefault(); setKey(0, 'bomb', true); }
+    }
+    // P2: Arrow keys + Enter
+    if (localMode || myPlayerIdx === 1) {
+      if (e.code === 'ArrowUp') { e.preventDefault(); setKey(1, 'up', true); }
+      if (e.code === 'ArrowDown') { e.preventDefault(); setKey(1, 'down', true); }
+      if (e.code === 'ArrowLeft') { e.preventDefault(); setKey(1, 'left', true); }
+      if (e.code === 'ArrowRight') { e.preventDefault(); setKey(1, 'right', true); }
+      if (e.code === 'Enter') { e.preventDefault(); setKey(1, 'bomb', true); }
+    }
+    if (e.code === 'KeyR') {
+      if (myPlayerIdx === 0 || localMode) ws.send(JSON.stringify({ type:'restart' }));
+    }
+  }
+  if (['ArrowUp','ArrowDown','ArrowLeft','ArrowRight','Space'].includes(e.key)) e.preventDefault();
+});
+
+document.addEventListener('keyup', e => {
+  if (localMode || myPlayerIdx === 0) {
+    if (e.code === 'KeyW') setKey(0, 'up', false);
+    if (e.code === 'KeyS') setKey(0, 'down', false);
+    if (e.code === 'KeyA') setKey(0, 'left', false);
+    if (e.code === 'KeyD') setKey(0, 'right', false);
+    if (e.code === 'Space') setKey(0, 'bomb', false);
+  }
+  if (localMode || myPlayerIdx === 1) {
+    if (e.code === 'ArrowUp') setKey(1, 'up', false);
+    if (e.code === 'ArrowDown') setKey(1, 'down', false);
+    if (e.code === 'ArrowLeft') setKey(1, 'left', false);
+    if (e.code === 'ArrowRight') setKey(1, 'right', false);
+    if (e.code === 'Enter') setKey(1, 'bomb', false);
+  }
+});
+
+// =============================================
+// Mobile touch controls
+// =============================================
+const joystickArea = document.getElementById('joystickArea');
+const joystickHandle = document.getElementById('joystickHandle');
+const bombBtn = document.getElementById('bombBtn');
+const BASE_R = 55, HANDLE_R = 25, DEAD_ZONE = 15;
+
+let joystickActive = false;
+let joystickOrigin = { x: 0, y: 0 };
+let joystickTouch = null;
+
+function getJoyRect() { return joystickArea.getBoundingClientRect(); }
+
+function updateJoystick(dx, dy) {
+  const dist = Math.sqrt(dx*dx + dy*dy);
+  const clampedDist = Math.min(dist, BASE_R - HANDLE_R);
+  const angle = Math.atan2(dy, dx);
+  const hx = Math.cos(angle) * clampedDist;
+  const hy = Math.sin(angle) * clampedDist;
+  joystickHandle.style.left = (BASE_R - HANDLE_R + hx) + 'px';
+  joystickHandle.style.top  = (BASE_R - HANDLE_R + hy) + 'px';
+
+  const pidx = myPlayerIdx >= 0 ? myPlayerIdx : 0;
+  if (dist > DEAD_ZONE) {
+    const ax = Math.abs(dx), ay = Math.abs(dy);
+    if (ax >= ay) {
+      // horizontal
+      setKey(pidx, 'left',  dx < 0);
+      setKey(pidx, 'right', dx > 0);
+      setKey(pidx, 'up',   false);
+      setKey(pidx, 'down', false);
+    } else {
+      // vertical
+      setKey(pidx, 'up',    dy < 0);
+      setKey(pidx, 'down',  dy > 0);
+      setKey(pidx, 'left',  false);
+      setKey(pidx, 'right', false);
+    }
+  } else {
+    setKey(pidx, 'up', false); setKey(pidx, 'down', false);
+    setKey(pidx, 'left', false); setKey(pidx, 'right', false);
+  }
+}
+
+function resetJoystick() {
+  joystickHandle.style.left = (BASE_R - HANDLE_R) + 'px';
+  joystickHandle.style.top  = (BASE_R - HANDLE_R) + 'px';
+  const pidx = myPlayerIdx >= 0 ? myPlayerIdx : 0;
+  setKey(pidx, 'up', false); setKey(pidx, 'down', false);
+  setKey(pidx, 'left', false); setKey(pidx, 'right', false);
+}
+
+joystickArea.addEventListener('touchstart', e => {
+  e.preventDefault();
+  joystickActive = true;
+  const rect = getJoyRect();
+  const t = e.changedTouches[0];
+  joystickOrigin = { x: t.clientX - rect.left, y: t.clientY - rect.top };
+  joystickTouch = t.identifier;
+}, { passive: false });
+
+document.addEventListener('touchmove', e => {
+  e.preventDefault();
+  if (!joystickActive) return;
+  const rect = getJoyRect();
+  for (const t of e.changedTouches) {
+    if (t.identifier === joystickTouch) {
+      const dx = (t.clientX - rect.left) - joystickOrigin.x;
+      const dy = (t.clientY - rect.top)  - joystickOrigin.y;
+      updateJoystick(dx, dy);
+    }
+  }
+}, { passive: false });
+
+document.addEventListener('touchend', e => {
+  for (const t of e.changedTouches) {
+    if (t.identifier === joystickTouch) {
+      joystickActive = false;
+      joystickTouch = null;
+      resetJoystick();
+    }
+  }
+});
+
+bombBtn.addEventListener('touchstart', e => {
+  e.preventDefault();
+  const pidx = myPlayerIdx >= 0 ? myPlayerIdx : 0;
+  setKey(pidx, 'bomb', true);
+}, { passive: false });
+
+bombBtn.addEventListener('touchend', e => {
+  e.preventDefault();
+  const pidx = myPlayerIdx >= 0 ? myPlayerIdx : 0;
+  setKey(pidx, 'bomb', false);
+}, { passive: false });
+
+// =============================================
+// Buttons
+// =============================================
+document.getElementById('restartBtn').addEventListener('click', () => {
+  if (myPlayerIdx === 0 || localMode) ws.send(JSON.stringify({ type:'restart' }));
+});
+document.getElementById('homeBtn').addEventListener('click', () => {
+  showScreen('home');
+  gs.mapId = null;
+  gameStarted = false;
+  document.getElementById('overlay').classList.add('hidden');
+});
+
+// =============================================
+// Render loop (client-side, 60fps)
+// =============================================
+function gameLoop(ts) {
+  if (gs.mapId && gs.map) render(ts);
+  requestAnimationFrame(gameLoop);
+}
+
+function render(ts) {
+  ctx.clearRect(0, 0, CANVAS_W, CANVAS_H);
+  drawBackground(ts);
+  drawExplosionsBottom(ts);
+  drawTiles(ts);
+  drawItems(ts);
+  drawBalloons(ts);
+  drawExplosionsTop(ts);
+  drawPlayers(ts);
+  drawSpaceDanger(ts);
+}
+
+// =============================================
+// Background
+// =============================================
+function drawBackground(ts) {
+  const m = gs.mapId;
+  if (m === 'village') {
+    for (let r = 0; r < ROWS; r++) for (let c = 0; c < COLS; c++) {
+      const v = tileVar(r,c,3);
+      if (!spr('terrain_grass',v*32,0,32,32,c*TILE,r*TILE,TILE,TILE)) {
+        ctx.fillStyle = (r+c)%2===0 ? '#2d5a1b' : '#336622';
+        ctx.fillRect(c*TILE, r*TILE, TILE, TILE);
+      }
+    }
+  } else if (m === 'ice') {
+    for (let r = 0; r < ROWS; r++) for (let c = 0; c < COLS; c++) {
+      ctx.fillStyle = (r+c)%2===0 ? '#c8e8f8' : '#ddf0ff';
+      ctx.fillRect(c*TILE, r*TILE, TILE, TILE);
+    }
+    if (SPRITES['terrain_ground']) {
+      ctx.save(); ctx.globalAlpha = 0.22;
+      for (let r = 0; r < ROWS; r++) for (let c = 0; c < COLS; c++) {
+        const v = tileVar(r,c,3);
+        spr('terrain_ground',v*32,0,32,32,c*TILE,r*TILE,TILE,TILE);
+      }
+      ctx.restore();
+    }
+  } else {
+    ctx.fillStyle = '#04040e';
+    ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
+    for (const s of (gs.stars || [])) {
+      const alpha = 0.4 + 0.6 * Math.abs(Math.sin(ts/1000 + s.b*10));
+      ctx.fillStyle = `rgba(255,255,255,${alpha})`;
+      ctx.beginPath(); ctx.arc(s.x, s.y, s.r, 0, Math.PI*2); ctx.fill();
+    }
+  }
+}
+
+// =============================================
+// Tiles
+// =============================================
+function drawTiles(ts) {
+  const m = gs.mapId;
+  for (let r = 0; r < ROWS; r++) for (let c = 0; c < COLS; c++) {
+    const x = c*TILE, y = r*TILE;
+    if (gs.map[r][c] === T_WALL) drawWall(m, x, y, r, c);
+    else if (gs.map[r][c] === T_BOX) drawBox(m, x, y, r, c, ts);
+  }
+}
+
+function drawWall(m, x, y, r, c) {
+  const v = tileVar(r,c,3);
+  if (m === 'village') {
+    if (!spr('terrain_rock',v*32,0,32,32,x,y,TILE,TILE)) {
+      ctx.fillStyle='#607080'; ctx.fillRect(x,y,TILE,TILE);
+      ctx.fillStyle='#708090'; ctx.fillRect(x+1,y+1,TILE-2,TILE-2);
+      ctx.strokeStyle='#4a5a68'; ctx.lineWidth=1; ctx.strokeRect(x+0.5,y+0.5,TILE-1,TILE-1);
+    }
+  } else if (m === 'ice') {
+    if (!spr('terrain_wall',v*32,0,32,32,x,y,TILE,TILE)) {
+      ctx.fillStyle='#1a3a5a'; ctx.fillRect(x,y,TILE,TILE);
+      ctx.fillStyle='#2a5a8a'; ctx.fillRect(x+2,y+2,TILE-4,TILE-4);
+    }
+    ctx.fillStyle='rgba(0,80,200,0.22)'; ctx.fillRect(x,y,TILE,TILE);
+  } else {
+    if (!spr('terrain_rock',v*32,0,32,32,x,y,TILE,TILE)) {
+      ctx.fillStyle='#2a2a3a'; ctx.fillRect(x,y,TILE,TILE);
+      ctx.fillStyle='#3a3a4e'; ctx.fillRect(x+2,y+2,TILE-4,TILE-4);
+    }
+    ctx.fillStyle='rgba(0,0,20,0.42)'; ctx.fillRect(x,y,TILE,TILE);
+  }
+}
+
+function drawBox(m, x, y, r, c, ts) {
+  if (!spr('box',0,0,96,96,x,y,TILE,TILE)) {
+    if (m === 'village') {
+      ctx.fillStyle='#c8a55a'; ctx.fillRect(x+1,y+1,TILE-2,TILE-2);
+      ctx.fillStyle='#e0c070'; ctx.fillRect(x+3,y+3,TILE-6,TILE/2-4);
+      ctx.strokeStyle='#a07830'; ctx.lineWidth=2;
+      ctx.beginPath(); ctx.moveTo(x+4,y+4); ctx.lineTo(x+TILE-4,y+TILE-4);
+      ctx.moveTo(x+TILE-4,y+4); ctx.lineTo(x+4,y+TILE-4); ctx.stroke();
+      ctx.strokeStyle='#806020'; ctx.lineWidth=1; ctx.strokeRect(x+1.5,y+1.5,TILE-3,TILE-3);
+    } else if (m === 'ice') {
+      ctx.fillStyle='rgba(160,220,255,0.7)'; ctx.fillRect(x+2,y+2,TILE-4,TILE-4);
+      ctx.fillStyle='rgba(255,255,255,0.5)'; ctx.fillRect(x+4,y+4,TILE-8,10);
+      ctx.strokeStyle='rgba(100,180,240,0.8)'; ctx.lineWidth=1;
+      ctx.beginPath(); ctx.moveTo(x+8,y+14); ctx.lineTo(x+TILE-10,y+22);
+      ctx.moveTo(x+12,y+26); ctx.lineTo(x+6,y+TILE-8); ctx.stroke();
+      ctx.strokeStyle='rgba(180,230,255,0.9)'; ctx.lineWidth=1; ctx.strokeRect(x+2,y+2,TILE-4,TILE-4);
+    } else {
+      const rad=6;
+      ctx.fillStyle='#6a3a1a'; roundRect(ctx,x+2,y+2,TILE-4,TILE-4,rad); ctx.fill();
+      ctx.fillStyle='#8a5a30'; roundRect(ctx,x+4,y+4,TILE-8,TILE*0.4,rad*0.5); ctx.fill();
+      ctx.fillStyle='rgba(0,0,0,0.3)';
+      [[x+10,y+12,5],[x+TILE-10,y+22,4],[x+14,y+TILE-12,3]].forEach(([cx,cy,r])=>{
+        ctx.beginPath(); ctx.arc(cx,cy,r,0,Math.PI*2); ctx.fill();
+      });
+      ctx.strokeStyle='#4a2a0a'; ctx.lineWidth=1; roundRect(ctx,x+2,y+2,TILE-4,TILE-4,rad); ctx.stroke();
+    }
+  }
+}
+
+function roundRect(ctx, x, y, w, h, r) {
+  ctx.beginPath();
+  ctx.moveTo(x+r,y); ctx.lineTo(x+w-r,y); ctx.quadraticCurveTo(x+w,y,x+w,y+r);
+  ctx.lineTo(x+w,y+h-r); ctx.quadraticCurveTo(x+w,y+h,x+w-r,y+h);
+  ctx.lineTo(x+r,y+h); ctx.quadraticCurveTo(x,y+h,x,y+h-r);
+  ctx.lineTo(x,y+r); ctx.quadraticCurveTo(x,y,x+r,y);
+  ctx.closePath();
+}
+
+// =============================================
+// Items
+// =============================================
+function drawItems(ts) {
+  for (const item of gs.items) {
+    const x=item.c*TILE, y=item.r*TILE, cx=x+TILE/2, cy=y+TILE/2;
+    const bob = Math.sin(ts/400 + item.r + item.c) * 3;
+    ctx.save();
+    if (item.type === 'balloon_up') {
+      ctx.shadowColor='#ffaa00'; ctx.shadowBlur=10;
+      ctx.fillStyle='#ff8800'; ctx.beginPath(); ctx.arc(cx,cy+bob,TILE*0.35,0,Math.PI*2); ctx.fill();
+      ctx.fillStyle='#ffcc44'; ctx.beginPath(); ctx.arc(cx-3,cy+bob-3,TILE*0.12,0,Math.PI*2); ctx.fill();
+      ctx.restore();
+      ctx.font=`${TILE*0.5}px Arial`; ctx.textAlign='center'; ctx.textBaseline='middle';
+      ctx.fillText('💣',cx,cy+bob);
+    } else {
+      ctx.shadowColor='#00aaff'; ctx.shadowBlur=10;
+      ctx.fillStyle='#0066cc'; ctx.beginPath(); ctx.arc(cx,cy+bob,TILE*0.35,0,Math.PI*2); ctx.fill();
+      ctx.fillStyle='#44ccff'; ctx.beginPath(); ctx.arc(cx-3,cy+bob-3,TILE*0.12,0,Math.PI*2); ctx.fill();
+      ctx.restore();
+      ctx.font=`${TILE*0.5}px Arial`; ctx.textAlign='center'; ctx.textBaseline='middle';
+      ctx.fillText('🔥',cx,cy+bob);
+    }
+  }
+}
+
+// =============================================
+// Explosions
+// =============================================
+function drawExplosionsBottom(ts) {
+  if (SPRITES['explosion']) return;
+  for (const e of gs.explosions) {
+    const prog = Math.max(0, Math.min(1, 1 - (e.endTime - ts) / EXPLODE_DURATION));
+    ctx.save();
+    ctx.fillStyle = `rgba(0,180,255,${0.8 - prog*0.5})`;
+    ctx.fillRect(e.c*TILE+2, e.r*TILE+2, TILE-4, TILE-4);
+    ctx.restore();
+  }
+}
+
+function drawExplosionsTop(ts) {
+  for (const e of gs.explosions) {
+    const prog = Math.max(0, Math.min(1, 1 - (e.endTime - ts) / EXPLODE_DURATION));
+    if (SPRITES['explosion']) {
+      const fi = Math.min(5, Math.floor(prog * 6));
+      const sx = (fi%3)*32, sy = Math.floor(fi/3)*32;
+      ctx.drawImage(SPRITES['explosion'], sx, sy, 32, 32, e.c*TILE, e.r*TILE, TILE, TILE);
+    } else {
+      ctx.save();
+      const alpha = 0.6 - prog*0.5;
+      const wave = Math.sin(ts/60 + e.r + e.c) * 4;
+      ctx.fillStyle = `rgba(255,255,255,${alpha})`;
+      ctx.fillRect(e.c*TILE+8, e.r*TILE+TILE/2-3+wave, TILE-16, 6);
+      if (prog < 0.3) {
+        ctx.fillStyle = `rgba(0,220,255,${(0.3-prog)*2})`;
+        ctx.fillRect(e.c*TILE, e.r*TILE, TILE, TILE);
+      }
+      ctx.restore();
+    }
+  }
+}
+
+// =============================================
+// Balloons
+// =============================================
+function drawBalloons(ts) {
+  for (const b of gs.balloons) {
+    const bx=b.c*TILE+TILE/2, by=b.r*TILE+TILE/2;
+    const tLeft = b.explodeAt - ts;
+    const urgency = 1 - tLeft / BALLOON_DELAY;
+    const shake = urgency > 0.6 ? Math.sin(ts/80)*3*urgency : 0;
+    ctx.save(); ctx.translate(bx+shake, by);
+    if (SPRITES['dynamite']) {
+      const speed = urgency > 0.6 ? 80 : 150;
+      const fi = Math.floor(ts/speed)%9;
+      const sx=(fi%3)*32, sy=Math.floor(fi/3)*32;
+      ctx.drawImage(SPRITES['dynamite'],sx,sy,32,32,-TILE/2,-TILE/2,TILE,TILE);
+    } else {
+      const sz = (TILE/2-6) * (1+urgency*0.15);
+      const pidx = b.playerIdx;
+      const p = gs.players[pidx] || { balloonColor:'#00bfff', balloonBorder:'#0077cc' };
+      const g = ctx.createRadialGradient(-sz*0.2,-sz*0.3,sz*0.1,0,0,sz);
+      g.addColorStop(0,'#ffffff88'); g.addColorStop(0.3,p.balloonColor+'cc'); g.addColorStop(1,p.balloonColor);
+      ctx.beginPath(); ctx.arc(0,0,sz,0,Math.PI*2); ctx.fillStyle=g; ctx.fill();
+      ctx.strokeStyle=p.balloonBorder; ctx.lineWidth=2; ctx.stroke();
+      ctx.beginPath(); ctx.arc(-sz*0.3,-sz*0.3,sz*0.2,0,Math.PI*2); ctx.fillStyle='rgba(255,255,255,0.6)'; ctx.fill();
+    }
+    ctx.restore();
+  }
+}
+
+// =============================================
+// Players
+// =============================================
+function drawPlayers(ts) {
+  const now = Date.now();
+  for (const p of gs.players) {
+    const px=p.x, py=p.y;
+    const isP1 = p.id === 1;
+
+    if (!p.alive) {
+      if (p.dyingAt !== null && SPRITES['char_death']) {
+        const elapsed = now - p.dyingAt;
+        const df = Math.min(4, Math.floor(elapsed/150));
+        ctx.drawImage(SPRITES['char_death'],df*32,0,32,32,px-TILE/2,py-TILE/2,TILE,TILE);
+      }
+      continue;
+    }
+
+    if (gs.over && p.winning && SPRITES['char_win']) {
+      const wf = Math.floor(ts/200)%2;
+      ctx.drawImage(SPRITES['char_win'],wf*32,0,32,32,px-TILE/2,py-TILE/2,TILE,TILE);
+      continue;
+    }
+
+    const moving = p.moving || false;
+    const fd = p.facing || { x:0, y:1 };
+    const dir = fd.x<0?'left':fd.x>0?'right':fd.y<0?'back':'front';
+    const sprKey = `char_${moving?'walk':'idle'}_${dir}`;
+    const fi = moving ? Math.floor((p.walkCycle||0)*6)%4 : Math.floor(ts/250)%4;
+
+    if (spr(sprKey,fi*32,0,32,32,px-TILE/2,py-TILE/2,TILE,TILE)) {
+      ctx.save();
+      ctx.fillStyle = p.color;
+      ctx.font = 'bold 10px Arial'; ctx.textAlign='center'; ctx.textBaseline='middle';
+      ctx.fillText(`P${p.id}`, px, py-TILE/2-6);
+      ctx.restore();
+    } else {
+      drawPlayerCanvas(p, px, py, ts, moving, fd);
+    }
+
+    // Trap bubble
+    if (p.trapped && p.trapStartAt !== null) {
+      const elapsed = now - p.trapStartAt;
+      const timeLeft = Math.max(0, TRAP_DURATION - elapsed);
+      const escProg = Math.min(1, p.escapeCount / ESCAPE_NEEDED);
+      const timeProg = timeLeft / TRAP_DURATION;
+      const pulse = 0.55 + 0.25 * Math.sin(now/120);
+
+      ctx.save();
+      ctx.globalAlpha = pulse*0.18; ctx.fillStyle='#00aaff';
+      ctx.beginPath(); ctx.arc(px,py,TILE*0.58,0,Math.PI*2); ctx.fill();
+      ctx.globalAlpha = pulse*0.85; ctx.strokeStyle='#00ddff'; ctx.lineWidth=2.5;
+      ctx.beginPath(); ctx.arc(px,py,TILE*0.58,0,Math.PI*2); ctx.stroke();
+      ctx.globalAlpha = pulse*0.5; ctx.fillStyle='#ffffff';
+      ctx.beginPath(); ctx.arc(px-TILE*0.2,py-TILE*0.2,TILE*0.12,0,Math.PI*2); ctx.fill();
+      ctx.restore();
+
+      const bw=TILE*0.85, bh=5, bx=px-bw/2, by_=py-TILE*0.7;
+      ctx.fillStyle='rgba(0,0,0,0.4)'; ctx.fillRect(bx,by_,bw,bh);
+      const rr=Math.floor((1-timeProg)*255), gg=Math.floor(timeProg*200);
+      ctx.fillStyle=`rgb(${rr},${gg},0)`; ctx.fillRect(bx,by_,bw*timeProg,bh);
+
+      const ex=px-bw/2, ey=by_-7;
+      ctx.fillStyle='rgba(0,0,0,0.4)'; ctx.fillRect(ex,ey,bw,bh);
+      ctx.fillStyle='#00ffaa'; ctx.fillRect(ex,ey,bw*escProg,bh);
+
+      ctx.save();
+      ctx.fillStyle='#ffffff'; ctx.font='bold 9px Arial'; ctx.textAlign='center'; ctx.textBaseline='middle';
+      ctx.fillText('키 연타로 탈출!', px, py-TILE*0.85);
+      ctx.fillStyle=`rgb(${rr},${gg},0)`; ctx.font='bold 11px Arial';
+      ctx.fillText(`${Math.ceil(timeLeft/1000)}s`, px, py+TILE*0.72);
+      ctx.restore();
+    }
+  }
+}
+
+function drawPlayerCanvas(p, px, py, ts, moving, fd) {
+  const isP1 = p.id === 1;
+  ctx.fillStyle='rgba(0,0,0,0.25)';
+  ctx.beginPath(); ctx.ellipse(px+2,py+18,13,4,0,0,Math.PI*2); ctx.fill();
+  const wc = p.walkCycle || 0;
+  const legSwing = moving ? Math.sin(wc)*5 : 0;
+  ctx.fillStyle = p.color;
+  ctx.beginPath(); ctx.ellipse(px-5,py+14+legSwing,3,5,0,0,Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.ellipse(px+5,py+14-legSwing,3,5,0,0,Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.ellipse(px,py+6,9,7,0,0,Math.PI*2); ctx.fill();
+  const armSwing = moving ? Math.sin(wc)*4 : 0;
+  ctx.beginPath(); ctx.ellipse(px-13,py+4+armSwing,3,4,Math.PI*0.15,0,Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.ellipse(px+13,py+4-armSwing,3,4,-Math.PI*0.15,0,Math.PI*2); ctx.fill();
+  const headR=14;
+  const hg=ctx.createRadialGradient(px-4,py-6,2,px,py-2,headR);
+  hg.addColorStop(0,'rgba(255,255,255,0.4)');
+  hg.addColorStop(0.5,p.color+'dd');
+  hg.addColorStop(1,p.borderColor);
+  ctx.beginPath(); ctx.arc(px,py-2,headR,0,Math.PI*2);
+  ctx.fillStyle=hg; ctx.fill();
+  ctx.strokeStyle=p.borderColor; ctx.lineWidth=2; ctx.stroke();
+  if (isP1) {
+    [[-6,-2],[6,-2]].forEach(([ox])=>{
+      ctx.fillStyle=p.color; ctx.beginPath(); ctx.ellipse(px+ox,py-headR-8,3,9,ox<0?-0.2:0.2,0,Math.PI*2); ctx.fill();
+      ctx.strokeStyle=p.borderColor; ctx.lineWidth=1; ctx.stroke();
+      ctx.fillStyle='#ffaabb'; ctx.beginPath(); ctx.ellipse(px+ox,py-headR-8,1.5,5,ox<0?-0.2:0.2,0,Math.PI*2); ctx.fill();
+    });
+  } else {
+    [[-5,0],[5,0]].forEach(([ox])=>{
+      ctx.fillStyle=p.color; ctx.beginPath();
+      ctx.moveTo(px+ox-3,py-headR+2); ctx.lineTo(px+ox,py-headR-9); ctx.lineTo(px+ox+3,py-headR+2);
+      ctx.closePath(); ctx.fill();
+      ctx.strokeStyle=p.borderColor; ctx.lineWidth=1; ctx.stroke();
+    });
+  }
+  const ex=fd.x*2, ey=fd.y*2;
+  [[-5,0],[5,0]].forEach(([ox])=>{
+    ctx.fillStyle='#fff'; ctx.beginPath(); ctx.ellipse(px+ox+ex,py-2+ey,4,4.5,0,0,Math.PI*2); ctx.fill();
+  });
+  [[-5,0],[5,0]].forEach(([ox])=>{
+    ctx.fillStyle='#111'; ctx.beginPath(); ctx.arc(px+ox+ex+fd.x,py-2+ey+fd.y*0.5,2.5,0,Math.PI*2); ctx.fill();
+    ctx.fillStyle='#fff'; ctx.beginPath(); ctx.arc(px+ox+ex+fd.x+1,py-3+ey+fd.y*0.5,1,0,Math.PI*2); ctx.fill();
+  });
+  ctx.fillStyle=isP1?'rgba(120,180,255,0.4)':'rgba(255,120,120,0.4)';
+  ctx.beginPath(); ctx.arc(px-9+ex,py+2,3.5,0,Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.arc(px+9+ex,py+2,3.5,0,Math.PI*2); ctx.fill();
+}
+
+// =============================================
+// Space danger overlay
+// =============================================
+function isInDangerZone(r, c, layer) { return r<layer||r>=ROWS-layer||c<layer||c>=COLS-layer; }
+
+function drawSpaceDanger(ts) {
+  if (gs.mapId !== 'space') return;
+  const L = gs.spaceWallLayer;
+  if (L > 0) {
+    ctx.fillStyle = 'rgba(80,0,0,0.55)';
+    for (let r = 0; r < ROWS; r++) for (let c = 0; c < COLS; c++) {
+      if (isInDangerZone(r,c,L) && gs.map[r][c] !== T_WALL) ctx.fillRect(c*TILE,r*TILE,TILE,TILE);
+    }
+  }
+  if (gs.spaceDanger) {
+    const nextL = L + 1;
+    const alpha = 0.3 + 0.3*Math.sin(ts/120);
+    ctx.fillStyle = `rgba(255,40,40,${alpha})`;
+    for (let r = 0; r < ROWS; r++) for (let c = 0; c < COLS; c++) {
+      if (isInDangerZone(r,c,nextL) && !isInDangerZone(r,c,L) && gs.map[r][c] !== T_WALL)
+        ctx.fillRect(c*TILE,r*TILE,TILE,TILE);
+    }
+    const tLeft = Math.ceil((gs.spaceDangerAt - ts) / 1000);
+    ctx.fillStyle = `rgba(255,80,80,${0.7+0.3*Math.sin(ts/150)})`;
+    ctx.font = 'bold 18px Arial'; ctx.textAlign='center'; ctx.textBaseline='middle';
+    ctx.fillText(`⚠ 구역 축소 ${tLeft}초 전 ⚠`, CANVAS_W/2, CANVAS_H/2);
+  }
+}
+
+// =============================================
+// Start
+// =============================================
+requestAnimationFrame(gameLoop);
+
+preloadSprites().then(() => {
+  document.getElementById('loadingScreen').classList.add('hidden');
+  // 로딩 완료 → 플레이어 선택 화면
+  document.getElementById('pickScreen').classList.remove('hidden');
+  // 이미 pickPlayer 메시지가 왔으면 UI 업데이트
+  if (pendingPick) updatePickUI(pendingPick.taken);
+});
+</script>
+</body>
+</html>
