@@ -623,10 +623,12 @@ wss.on('connection', (ws, req) => {
     }
     clients = clients.filter(c => c !== client);
 
-    // 한 명이 나가면 나머지에게도 reload 요청
+    // 한 명이 나가면 나머지에게 알림
     if (clients.length > 0) {
-      broadcast({ type: 'reload' });
+      broadcast({ type: 'disconnected' });
     }
+    // 서버 게임 상태 초기화
+    gs = null; slots = [null, null]; localMode = false;
 
     if (clients.length === 0) { gs = null; localMode = false; }
   });
