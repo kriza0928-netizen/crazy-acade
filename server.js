@@ -442,6 +442,7 @@ function broadcastState() {
   const state = {
     type: 'state',
     serverTime: now,
+    map: gs.map,   // 항상 포함 (맵이 작아서 부담 없음)
     players: gs.players,
     balloons: gs.balloons,
     explosions: gs.explosions,
@@ -454,10 +455,6 @@ function broadcastState() {
     spaceDangerAt: gs.spaceDangerAt,
     spaceWallLayer: gs.spaceWallLayer,
   };
-  if (gs.mapDirty) {
-    state.map = gs.map;
-    gs.mapDirty = false;
-  }
   broadcast(state);
 }
 
