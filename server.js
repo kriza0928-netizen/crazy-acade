@@ -623,8 +623,10 @@ wss.on('connection', (ws, req) => {
     }
     clients = clients.filter(c => c !== client);
 
-    // 남은 클라이언트에게 슬롯 상태 알림
-    broadcastSlots();
+    // 한 명이 나가면 나머지에게도 reload 요청
+    if (clients.length > 0) {
+      broadcast({ type: 'reload' });
+    }
 
     if (clients.length === 0) { gs = null; localMode = false; }
   });

@@ -452,6 +452,8 @@ ws.onmessage = (e) => {
     document.querySelector('#waitingOverlay h2').textContent = '❌ 접속 불가';
     document.querySelector('#waitingOverlay p').textContent = msg.message;
 
+  } else if (msg.type === 'reload') {
+    location.reload();
   } else if (msg.type === 'state') {
     applyState(msg);
   }
