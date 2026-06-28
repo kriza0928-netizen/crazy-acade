@@ -636,7 +636,7 @@ wss.on('connection', (ws, req) => {
 // =============================================
 // Start
 // =============================================
-const PORT = 3000;
+const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => {
   const ip = getLanIP();
   console.log(`\n🎮 크레이지 워터 아케이드 서버 시작!`);
