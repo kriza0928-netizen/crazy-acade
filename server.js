@@ -125,7 +125,23 @@ function isInDangerZone(r, c, layer) {
   return r < layer || r >= ROWS - layer || c < layer || c >= COLS - layer;
 }
 
+function updateDesertGimmick(now) {
+  if (gs.mapId !== 'desert') return;
+  const w = gs.desertWind;
+  if (!w.active && now >= w.nextAt) {
+    const dirs = [[1,0],[-1,0],[0,1],[0,-1]];
+    const [dx,dy] = dirs[Math.floor(Math.random()*4)];
+    w.active = true; w.dx = dx; w.dy = dy;
+    w.endAt = now + 3000;
+  }
+  if (w.active && now >= w.endAt) {
+    w.active = false;
+    w.nextAt = now + 8000;
+  }
+}
+
 function updateMapGimmick(now) {
+  updateDesertGimmick(now);
   if (gs.mapId !== 'space') return;
   if (gs.spacePhase >= 4) return;
   if (!gs.spaceDanger && now >= gs.spaceNextAt) {
@@ -163,27 +179,39 @@ function movePlayerInput(p, ix, iy, idx, speed, isIce, dt) {
     if (!isBlocked(p.x + stepX, p.y, idx, extraWalls)) p.x += stepX; else p.vx = 0;
     if (!isBlocked(p.x, p.y + stepY, idx, extraWalls)) p.y += stepY; else p.vy = 0;
   } else {
-    const SNAP_RANGE = TILE * 0.45;
-    const SNAP_SPEED = 0.30;
+    // 하드 스냅: 이동 속도와 동일하게 중심으로 당김 (lerp보다 빠르고 정확)
+    const SNAP_RANGE = TILE * 0.6;
+    const snapAxis = (val, center) => {
+      const d = center - val;
+      return Math.abs(d) < SNAP_RANGE
+        ? val + Math.sign(d) * Math.min(Math.abs(d), speed)
+        : val;
+    };
+
     if (ix !== 0 && iy !== 0) {
       if (!isBlocked(p.x + ix * speed, p.y, idx, extraWalls)) {
         p.x += ix * speed;
-        const cy = toCenter(toTile(p.y));
-        if (Math.abs(p.y - cy) < SNAP_RANGE) p.y += (cy - p.y) * SNAP_SPEED;
+        p.y = snapAxis(p.y, toCenter(toTile(p.y)));
       } else if (!isBlocked(p.x, p.y + iy * speed, idx, extraWalls)) {
         p.y += iy * speed;
-        const cx = toCenter(toTile(p.x));
-        if (Math.abs(p.x - cx) < SNAP_RANGE) p.x += (cx - p.x) * SNAP_SPEED;
+        p.x = snapAxis(p.x, toCenter(toTile(p.x)));
       }
     } else if (ix !== 0) {
-      const cy = toCenter(toTile(p.y));
-      if (Math.abs(p.y - cy) < SNAP_RANGE) p.y += (cy - p.y) * SNAP_SPEED;
+      p.y = snapAxis(p.y, toCenter(toTile(p.y)));
       if (!isBlocked(p.x + ix * speed, p.y, idx, extraWalls)) p.x += ix * speed;
     } else if (iy !== 0) {
-      const cx = toCenter(toTile(p.x));
-      if (Math.abs(p.x - cx) < SNAP_RANGE) p.x += (cx - p.x) * SNAP_SPEED;
+      p.x = snapAxis(p.x, toCenter(toTile(p.x)));
       if (!isBlocked(p.x, p.y + iy * speed, idx, extraWalls)) p.y += iy * speed;
     }
+  }
+
+  // 사막 바람
+  if (gs.mapId === 'desert' && gs.desertWind && gs.desertWind.active) {
+    const windSpeed = PLAYER_SPEED * TILE * dt * 0.7;
+    const wx = gs.desertWind.dx * windSpeed;
+    const wy = gs.desertWind.dy * windSpeed;
+    if (!isBlocked(p.x + wx, p.y, idx, extraWalls)) p.x += wx;
+    if (!isBlocked(p.x, p.y + wy, idx, extraWalls)) p.y += wy;
   }
 
   if (ix !== 0 || iy !== 0) {
@@ -232,7 +260,8 @@ function movePlayerInput(p, ix, iy, idx, speed, isIce, dt) {
 // =============================================
 function handleInputs(now, dt) {
   const isIce = gs.mapId === 'ice';
-  const speed = PLAYER_SPEED * TILE * dt;
+  const speedMultiplier = gs.mapId === 'city' ? 1.5 : 1.0;
+  const speed = PLAYER_SPEED * TILE * dt * speedMultiplier;
 
   for (let idx = 0; idx < 2; idx++) {
     const inp = inputs[idx];
@@ -411,6 +440,7 @@ function initGame(mapId) {
     ]
   };
   if (mapId === 'space') gs.spaceNextAt = Date.now() + 10000;
+  if (mapId === 'desert') gs.desertWind = { active: false, dx: 0, dy: 0, nextAt: Date.now() + 8000, endAt: 0 };
   inputs = [
     { up: false, down: false, left: false, right: false, bomb: false },
     { up: false, down: false, left: false, right: false, bomb: false },
@@ -454,6 +484,7 @@ function broadcastState() {
     spaceDanger: gs.spaceDanger,
     spaceDangerAt: gs.spaceDangerAt,
     spaceWallLayer: gs.spaceWallLayer,
+    desertWind: gs.desertWind || null,
   };
   broadcast(state);
 }

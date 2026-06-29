@@ -84,6 +84,12 @@ h1 { font-size:26px; margin-bottom:8px; color:#00d4ff; text-shadow:0 0 10px #00d
 .map-card.ice:hover, .map-card.ice.selected    { border-color:#88ddff; box-shadow:0 8px 28px #0060aaaa; }
 .map-card.space  { background:linear-gradient(160deg,#050510,#0a0a1a,#0f0f28); }
 .map-card.space:hover, .map-card.space.selected  { border-color:#aa88ff; box-shadow:0 8px 28px #440088aa; }
+.map-card.desert { background:linear-gradient(160deg,#3a2a0a,#6a4a10,#8a6020); }
+.map-card.desert:hover, .map-card.desert.selected { border-color:#ffcc44; box-shadow:0 8px 28px #aa6600aa; }
+.map-card.dungeon { background:linear-gradient(160deg,#1a0a2a,#2a1a3a,#3a1a2a); }
+.map-card.dungeon:hover, .map-card.dungeon.selected { border-color:#cc88ff; box-shadow:0 8px 28px #660088aa; }
+.map-card.city  { background:linear-gradient(160deg,#0a1a2a,#1a2a4a,#0a2a3a); }
+.map-card.city:hover, .map-card.city.selected  { border-color:#00ffcc; box-shadow:0 8px 28px #006644aa; }
 .map-card .map-icon { font-size:36px; margin-bottom:8px; }
 .map-card .map-name { font-size:16px; font-weight:bold; margin-bottom:4px; }
 .map-card .map-desc { font-size:11px; color:#ccc; line-height:1.4; }
@@ -284,6 +290,24 @@ h1 { font-size:26px; margin-bottom:8px; color:#00d4ff; text-shadow:0 0 10px #00d
       <div class="map-name">우주</div>
       <div class="map-desc">맵이 점점 좁아진다<br>생존하라!</div>
     </div>
+    <div class="map-card desert" data-map="desert" id="card-desert">
+      <span class="map-tag">바람</span>
+      <div class="map-icon">🏜️</div>
+      <div class="map-name">사막</div>
+      <div class="map-desc">모래바람이 분다<br>밀려나지 마라!</div>
+    </div>
+    <div class="map-card dungeon" data-map="dungeon" id="card-dungeon">
+      <span class="map-tag">어둠</span>
+      <div class="map-icon">🏰</div>
+      <div class="map-name">던전</div>
+      <div class="map-desc">캄캄한 어둠 속<br>주변만 보인다!</div>
+    </div>
+    <div class="map-card city" data-map="city" id="card-city">
+      <span class="map-tag">고속</span>
+      <div class="map-icon">🌆</div>
+      <div class="map-name">도시</div>
+      <div class="map-desc">1.5배 빠른 속도<br>반응이 전부다!</div>
+    </div>
     <!-- P2 overlay on cards -->
     <div id="p2WaitLabel" class="hidden">상대방이 맵을 선택 중입니다...</div>
   </div>
@@ -397,7 +421,12 @@ function tileVar(r,c,max){ return (r*13+c*7)%max; }
 // Game state (display only, set by server)
 // =============================================
 let gs={ map:null, players:[], balloons:[], explosions:[], items:[], over:false, winner:-1, mapId:null,
-         spacePhase:0, spaceDanger:false, spaceDangerAt:0, spaceWallLayer:0, stars:[] };
+         spacePhase:0, spaceDanger:false, spaceDangerAt:0, spaceWallLayer:0, stars:[], desertWind:null };
+
+// offscreen canvas for dungeon darkness
+const dungeonCanvas = document.createElement('canvas');
+dungeonCanvas.width = COLS*TILE; dungeonCanvas.height = ROWS*TILE;
+const dungeonCtx = dungeonCanvas.getContext('2d');
 
 // =============================================
 // WebSocket + session
@@ -408,7 +437,7 @@ let isMyMobile = /Mobile|Android|iPhone|iPad/i.test(navigator.userAgent);
 let serverTimeOffset = 0; // Date.now() - serverTime
 let gameStarted = false;
 let homeCardIdx = 0;
-const MAP_ORDER = ['village','ice','space'];
+const MAP_ORDER = ['village','ice','space','desert','dungeon','city'];
 let lanIP = location.host;
 let pendingPick = null; // pickPlayer 메시지 (로딩 완료 후 표시)
 
@@ -500,6 +529,7 @@ function applyState(msg) {
   gs.spaceDanger = msg.spaceDanger || false;
   gs.spaceDangerAt = (msg.spaceDangerAt || 0) + offset;
   gs.spaceWallLayer = msg.spaceWallLayer || 0;
+  gs.desertWind = msg.desertWind || null;
 
   if (msg.map) {
     gs.map = msg.map;
@@ -513,7 +543,7 @@ function applyState(msg) {
     gs.mapId = msg.mapId;
     gs.stars = [];
     for (let i = 0; i < 60; i++) gs.stars.push({ x: Math.random()*CANVAS_W, y: Math.random()*CANVAS_H, r: Math.random()*1.5+0.5, b: Math.random() });
-    document.getElementById('mapLabel').textContent = { village:'🌿 빌리지', ice:'❄️ 아이스', space:'🚀 우주' }[msg.mapId] || '';
+    document.getElementById('mapLabel').textContent = { village:'🌿 빌리지', ice:'❄️ 아이스', space:'🚀 우주', desert:'🏜️ 사막', dungeon:'🏰 던전', city:'🌆 도시' }[msg.mapId] || '';
   }
   if (!gs.mapId) gs.mapId = msg.mapId;
 
@@ -580,7 +610,7 @@ function showGameOver(winner) {
 function showDisconnected() {
   // 게임 상태 초기화
   gs = { map:null, players:[], balloons:[], explosions:[], items:[], over:false, winner:-1, mapId:null,
-         spacePhase:0, spaceDanger:false, spaceDangerAt:0, spaceWallLayer:0, stars:[] };
+         spacePhase:0, spaceDanger:false, spaceDangerAt:0, spaceWallLayer:0, stars:[], desertWind:null };
   gameStarted = false;
   myPlayerIdx = -1;
   localMode = false;
@@ -717,8 +747,8 @@ function setKey(pidx, keyName, val) {
 document.addEventListener('keydown', e => {
   // Home screen navigation
   if (!document.getElementById('homeScreen').classList.contains('hidden')) {
-    if (e.key === 'ArrowLeft') { homeCardIdx = (homeCardIdx-1+3)%3; highlightCard(); e.preventDefault(); }
-    if (e.key === 'ArrowRight') { homeCardIdx = (homeCardIdx+1)%3; highlightCard(); e.preventDefault(); }
+    if (e.key === 'ArrowLeft') { homeCardIdx = (homeCardIdx-1+MAP_ORDER.length)%MAP_ORDER.length; highlightCard(); e.preventDefault(); }
+    if (e.key === 'ArrowRight') { homeCardIdx = (homeCardIdx+1)%MAP_ORDER.length; highlightCard(); e.preventDefault(); }
     if (e.key === 'Enter') { selectMap(MAP_ORDER[homeCardIdx]); e.preventDefault(); }
     return;
   }
@@ -892,6 +922,8 @@ function render(ts) {
   drawExplosionsTop(ts);
   drawPlayers(ts);
   drawSpaceDanger(ts);
+  drawDesertWind(ts);
+  drawDungeonDarkness(ts);
 }
 
 // =============================================
@@ -920,6 +952,32 @@ function drawBackground(ts) {
       }
       ctx.restore();
     }
+  } else if (m === 'desert') {
+    for (let r = 0; r < ROWS; r++) for (let c = 0; c < COLS; c++) {
+      const v = tileVar(r,c,3);
+      const col = v===0 ? '#c8a020' : v===1 ? '#d4a830' : '#b89018';
+      ctx.fillStyle = col;
+      ctx.fillRect(c*TILE, r*TILE, TILE, TILE);
+      ctx.fillStyle = 'rgba(255,220,100,0.18)';
+      ctx.fillRect(c*TILE+4, r*TILE+4, TILE-8, 6);
+    }
+  } else if (m === 'dungeon') {
+    ctx.fillStyle = '#0a0810';
+    ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
+    for (let r = 0; r < ROWS; r++) for (let c = 0; c < COLS; c++) {
+      if ((r+c)%2===0) { ctx.fillStyle='rgba(60,20,80,0.3)'; ctx.fillRect(c*TILE,r*TILE,TILE,TILE); }
+    }
+  } else if (m === 'city') {
+    for (let r = 0; r < ROWS; r++) for (let c = 0; c < COLS; c++) {
+      const v = tileVar(r,c,3);
+      const col = v===0 ? '#1a2030' : v===1 ? '#1e2438' : '#161c28';
+      ctx.fillStyle = col;
+      ctx.fillRect(c*TILE, r*TILE, TILE, TILE);
+    }
+    ctx.strokeStyle = 'rgba(0,255,200,0.07)';
+    ctx.lineWidth = 1;
+    for (let r = 0; r <= ROWS; r++) { ctx.beginPath(); ctx.moveTo(0,r*TILE); ctx.lineTo(CANVAS_W,r*TILE); ctx.stroke(); }
+    for (let c = 0; c <= COLS; c++) { ctx.beginPath(); ctx.moveTo(c*TILE,0); ctx.lineTo(c*TILE,CANVAS_H); ctx.stroke(); }
   } else {
     ctx.fillStyle = '#04040e';
     ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
@@ -957,6 +1015,19 @@ function drawWall(m, x, y, r, c) {
       ctx.fillStyle='#2a5a8a'; ctx.fillRect(x+2,y+2,TILE-4,TILE-4);
     }
     ctx.fillStyle='rgba(0,80,200,0.22)'; ctx.fillRect(x,y,TILE,TILE);
+  } else if (m === 'desert') {
+    ctx.fillStyle='#7a5010'; ctx.fillRect(x,y,TILE,TILE);
+    ctx.fillStyle='#9a6820'; ctx.fillRect(x+2,y+2,TILE-4,TILE-4);
+    ctx.strokeStyle='#5a3808'; ctx.lineWidth=1; ctx.strokeRect(x+1.5,y+1.5,TILE-3,TILE-3);
+  } else if (m === 'dungeon') {
+    ctx.fillStyle='#2a1a3a'; ctx.fillRect(x,y,TILE,TILE);
+    ctx.fillStyle='#3a2a4e'; ctx.fillRect(x+2,y+2,TILE-4,TILE-4);
+    ctx.strokeStyle='#6a3a8a'; ctx.lineWidth=1; ctx.strokeRect(x+0.5,y+0.5,TILE-1,TILE-1);
+    ctx.fillStyle='rgba(180,100,255,0.08)'; ctx.fillRect(x,y,TILE,TILE);
+  } else if (m === 'city') {
+    ctx.fillStyle='#1a2a3a'; ctx.fillRect(x,y,TILE,TILE);
+    ctx.fillStyle='#2a3a4e'; ctx.fillRect(x+2,y+2,TILE-4,TILE-4);
+    ctx.strokeStyle='#00ffcc44'; ctx.lineWidth=1; ctx.strokeRect(x+1,y+1,TILE-2,TILE-2);
   } else {
     if (!spr('terrain_rock',v*32,0,32,32,x,y,TILE,TILE)) {
       ctx.fillStyle='#2a2a3a'; ctx.fillRect(x,y,TILE,TILE);
@@ -992,6 +1063,24 @@ function drawBox(m, x, y, r, c, ts) {
       });
       ctx.strokeStyle='#4a2a0a'; ctx.lineWidth=1; roundRect(ctx,x+2,y+2,TILE-4,TILE-4,rad); ctx.stroke();
     }
+  } else if (m === 'desert') {
+    ctx.fillStyle='#e8b840'; ctx.fillRect(x+2,y+2,TILE-4,TILE-4);
+    ctx.fillStyle='#f0cc60'; ctx.fillRect(x+4,y+4,TILE-8,10);
+    ctx.strokeStyle='rgba(180,140,20,0.8)'; ctx.lineWidth=1; ctx.strokeRect(x+2,y+2,TILE-4,TILE-4);
+    ctx.font='18px Arial'; ctx.textAlign='center'; ctx.textBaseline='middle';
+    ctx.fillText('🪨', x+TILE/2, y+TILE/2);
+  } else if (m === 'dungeon') {
+    ctx.fillStyle='#3a1a5a'; roundRect(ctx,x+2,y+2,TILE-4,TILE-4,4); ctx.fill();
+    ctx.fillStyle='rgba(180,100,255,0.25)'; ctx.fillRect(x+4,y+4,TILE-8,8);
+    ctx.strokeStyle='#9a60cc'; ctx.lineWidth=1; roundRect(ctx,x+2,y+2,TILE-4,TILE-4,4); ctx.stroke();
+    ctx.font='16px Arial'; ctx.textAlign='center'; ctx.textBaseline='middle';
+    ctx.fillText('💀', x+TILE/2, y+TILE/2);
+  } else if (m === 'city') {
+    ctx.fillStyle='#2a3a4a'; ctx.fillRect(x+2,y+2,TILE-4,TILE-4);
+    ctx.fillStyle='rgba(0,255,200,0.2)'; ctx.fillRect(x+4,y+4,TILE-8,8);
+    ctx.strokeStyle='#00ffcc88'; ctx.lineWidth=1; ctx.strokeRect(x+2,y+2,TILE-4,TILE-4);
+    ctx.font='16px Arial'; ctx.textAlign='center'; ctx.textBaseline='middle';
+    ctx.fillText('📦', x+TILE/2, y+TILE/2);
   }
 }
 
@@ -1246,6 +1335,70 @@ function drawSpaceDanger(ts) {
     ctx.font = 'bold 18px Arial'; ctx.textAlign='center'; ctx.textBaseline='middle';
     ctx.fillText(`⚠ 구역 축소 ${tLeft}초 전 ⚠`, CANVAS_W/2, CANVAS_H/2);
   }
+}
+
+// =============================================
+// Desert wind effect
+// =============================================
+const sandParticles = Array.from({length:40}, () => ({
+  x: Math.random()*CANVAS_W, y: Math.random()*CANVAS_H,
+  vx: 0, vy: 0, life: Math.random()
+}));
+
+function drawDesertWind(ts) {
+  if (gs.mapId !== 'desert' || !gs.desertWind || !gs.desertWind.active) return;
+  const w = gs.desertWind;
+  const dx = w.dx, dy = w.dy;
+  const speed = 3;
+  for (const p of sandParticles) {
+    p.x += dx * speed + (Math.random()-0.5)*0.5;
+    p.y += dy * speed + (Math.random()-0.5)*0.5;
+    p.life -= 0.01;
+    if (p.life <= 0 || p.x < 0 || p.x > CANVAS_W || p.y < 0 || p.y > CANVAS_H) {
+      p.x = dx > 0 ? 0 : dx < 0 ? CANVAS_W : Math.random()*CANVAS_W;
+      p.y = dy > 0 ? 0 : dy < 0 ? CANVAS_H : Math.random()*CANVAS_H;
+      p.life = 0.5 + Math.random()*0.5;
+    }
+    const alpha = p.life * 0.6;
+    ctx.fillStyle = `rgba(255,200,80,${alpha})`;
+    ctx.fillRect(p.x, p.y, 3, 1);
+  }
+  // direction arrow hint
+  const arrowLabel = dx > 0 ? '→ 바람' : dx < 0 ? '← 바람' : dy > 0 ? '↓ 바람' : '↑ 바람';
+  ctx.save();
+  ctx.globalAlpha = 0.5 + 0.3*Math.sin(ts/200);
+  ctx.fillStyle = '#ffcc44';
+  ctx.font = 'bold 14px Arial'; ctx.textAlign = 'center'; ctx.textBaseline = 'top';
+  ctx.fillText(arrowLabel, CANVAS_W/2, 6);
+  ctx.restore();
+}
+
+// =============================================
+// Dungeon darkness overlay
+// =============================================
+function drawDungeonDarkness(ts) {
+  if (gs.mapId !== 'dungeon') return;
+  dungeonCtx.clearRect(0, 0, CANVAS_W, CANVAS_H);
+  dungeonCtx.fillStyle = 'rgba(0,0,0,0.92)';
+  dungeonCtx.fillRect(0, 0, CANVAS_W, CANVAS_H);
+  dungeonCtx.globalCompositeOperation = 'destination-out';
+  for (const p of gs.players) {
+    if (!p.alive) continue;
+    const grad = dungeonCtx.createRadialGradient(p.x, p.y, 0, p.x, p.y, TILE * 2.8);
+    grad.addColorStop(0, 'rgba(0,0,0,1)');
+    grad.addColorStop(0.6, 'rgba(0,0,0,0.7)');
+    grad.addColorStop(1, 'rgba(0,0,0,0)');
+    dungeonCtx.fillStyle = grad;
+    dungeonCtx.beginPath(); dungeonCtx.arc(p.x, p.y, TILE*2.8, 0, Math.PI*2); dungeonCtx.fill();
+  }
+  dungeonCtx.globalCompositeOperation = 'source-over';
+  ctx.drawImage(dungeonCanvas, 0, 0);
+  // faint torch flicker vignette
+  ctx.save();
+  ctx.globalAlpha = 0.08 + 0.04*Math.sin(ts/180);
+  ctx.fillStyle = '#ff8800';
+  ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
+  ctx.restore();
 }
 
 // =============================================
