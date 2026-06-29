@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
 <title>크레이지 워터 아케이드</title>
+<audio id="bgm" src="the_mountain-arcade-fun-153642.mp3" loop preload="auto"></audio>
 <style>
 * { margin:0; padding:0; box-sizing:border-box; touch-action:none; }
 body {
@@ -521,6 +522,7 @@ function applyState(msg) {
     gameStarted = true;
     showScreen('game');
     updateDots();
+    bgmPlay();
   }
   if (gameStarted) {
     updateDots();
@@ -557,6 +559,7 @@ function updateHUDStats() {
 function showGameOver(winner) {
   const ovr = document.getElementById('overlay');
   if (!ovr.classList.contains('hidden')) return;
+  bgmStop();
   const txt = document.getElementById('winnerText');
   const sub = document.getElementById('winnerSub');
   if (winner === -1) {
@@ -645,6 +648,7 @@ function showScreen(name) {
     touch.style.display = 'none';
     document.getElementById('overlay').classList.add('hidden');
     gameStarted = false;
+    bgmStop();
   } else {
     home.classList.add('hidden');
     document.getElementById('waitingOverlay').classList.add('hidden');
@@ -1242,6 +1246,21 @@ function drawSpaceDanger(ts) {
     ctx.font = 'bold 18px Arial'; ctx.textAlign='center'; ctx.textBaseline='middle';
     ctx.fillText(`⚠ 구역 축소 ${tLeft}초 전 ⚠`, CANVAS_W/2, CANVAS_H/2);
   }
+}
+
+// =============================================
+// BGM
+// =============================================
+const bgm = document.getElementById('bgm');
+bgm.volume = 0.4;
+
+function bgmPlay() {
+  bgm.currentTime = 0;
+  bgm.play().catch(()=>{});
+}
+function bgmStop() {
+  bgm.pause();
+  bgm.currentTime = 0;
 }
 
 // =============================================
