@@ -56,6 +56,26 @@ let localMode = false; // true when single PC holds both slots
 // =============================================
 // Map generation
 // =============================================
+function buildRacingMap() {
+  const map = Array.from({length: ROWS}, () => Array(COLS).fill(T_EMPTY));
+  // 외곽 벽
+  for (let r = 0; r < ROWS; r++)
+    for (let c = 0; c < COLS; c++)
+      if (r===0 || r===ROWS-1 || c===0 || c===COLS-1) map[r][c] = T_WALL;
+  // 내부 섬 (트랙 안쪽)
+  for (let r = 3; r <= 9; r++)
+    for (let c = 4; c <= 10; c++)
+      map[r][c] = T_WALL;
+  // 트랙 위에 박스 (스폰/연료소 주변 제외)
+  const safe = [[1,1],[1,2],[2,1],[11,13],[11,12],[10,13],[1,7],[11,7]];
+  const isSafe = (r,c) => safe.some(([sr,sc])=>sr===r&&sc===c);
+  for (let r = 1; r < ROWS-1; r++)
+    for (let c = 1; c < COLS-1; c++)
+      if (map[r][c]===T_EMPTY && !isSafe(r,c) && Math.random()<0.30)
+        map[r][c] = T_BOX;
+  return map;
+}
+
 function buildMap() {
   const map = [];
   for (let r = 0; r < ROWS; r++) {
@@ -258,10 +278,39 @@ function movePlayerInput(p, ix, iy, idx, speed, isIce, dt) {
 // =============================================
 // Input processing
 // =============================================
+function updateFuelStations(now) {
+  if (!gs.fuelStations) return;
+  for (const fs of gs.fuelStations) {
+    if (!fs.active && now >= fs.rechargeAt) fs.active = true;
+  }
+}
+
 function handleInputs(now, dt) {
   const isIce = gs.mapId === 'ice';
-  const speedMultiplier = gs.mapId === 'city' ? 1.5 : 1.0;
-  const speed = PLAYER_SPEED * TILE * dt * speedMultiplier;
+
+  for (let idx = 0; idx < 2; idx++) {
+    const p = gs.players[idx];
+    // 연료소 체크
+    if (gs.mapId === 'racing' && gs.fuelStations) {
+      const pr = Math.floor(p.y / TILE);
+      const pc = Math.floor(p.x / TILE);
+      for (const fs of gs.fuelStations) {
+        if (fs.active && fs.r === pr && fs.c === pc) {
+          p.boostEndAt = now + 4000;
+          fs.active = false;
+          fs.rechargeAt = now + 10000;
+        }
+      }
+    }
+  }
+
+  const getSpeedMult = (p) => {
+    if (gs.mapId === 'city') return 1.5;
+    if (gs.mapId === 'racing' && p.boostEndAt && now < p.boostEndAt) return 2.0;
+    return 1.0;
+  };
+  // speed는 루프 안에서 플레이어별로 계산
+  const baseSpeed = PLAYER_SPEED * TILE * dt;
 
   for (let idx = 0; idx < 2; idx++) {
     const inp = inputs[idx];
@@ -270,6 +319,7 @@ function handleInputs(now, dt) {
 
     const ix = (inp.left ? -1 : 0) + (inp.right ? 1 : 0);
     const iy = (inp.up ? -1 : 0) + (inp.down ? 1 : 0);
+    const speed = baseSpeed * getSpeedMult(p);
     movePlayerInput(p, ix, iy, idx, speed, isIce, dt);
 
     // Bomb placement on rising edge
@@ -409,7 +459,7 @@ function checkWin() {
 // Game init
 // =============================================
 function initGame(mapId) {
-  const map = buildMap();
+  const map = mapId === 'racing' ? buildRacingMap() : buildMap();
   gs = {
     map,
     explosions: [], balloons: [], items: [],
@@ -427,6 +477,7 @@ function initGame(mapId) {
         balloonColor: '#00bfff', balloonBorder: '#0077cc',
         vx: 0, vy: 0, facing: { x: 0, y: 1 }, walkCycle: 0,
         dyingAt: null, winning: false, moving: false,
+        boostEndAt: 0,
       },
       {
         id: 2, x: (COLS-2)*TILE + TILE/2, y: (ROWS-2)*TILE + TILE/2,
@@ -436,11 +487,16 @@ function initGame(mapId) {
         balloonColor: '#aaff00', balloonBorder: '#44aa00',
         vx: 0, vy: 0, facing: { x: 0, y: 1 }, walkCycle: 0,
         dyingAt: null, winning: false, moving: false,
+        boostEndAt: 0,
       }
     ]
   };
   if (mapId === 'space') gs.spaceNextAt = Date.now() + 10000;
   if (mapId === 'desert') gs.desertWind = { active: false, dx: 0, dy: 0, nextAt: Date.now() + 8000, endAt: 0 };
+  if (mapId === 'racing') gs.fuelStations = [
+    { r: 1, c: 7, active: true, rechargeAt: 0 },
+    { r: 11, c: 7, active: true, rechargeAt: 0 },
+  ];
   inputs = [
     { up: false, down: false, left: false, right: false, bomb: false },
     { up: false, down: false, left: false, right: false, bomb: false },
@@ -485,6 +541,7 @@ function broadcastState() {
     spaceDangerAt: gs.spaceDangerAt,
     spaceWallLayer: gs.spaceWallLayer,
     desertWind: gs.desertWind || null,
+    fuelStations: gs.fuelStations || null,
   };
   broadcast(state);
 }
@@ -505,6 +562,7 @@ setInterval(() => {
   updateExplosions(now);
   updateTrapped(now);
   updateMapGimmick(now);
+  updateFuelStations(now);
   checkWin();
   broadcastState();
 }, 1000 / 60);

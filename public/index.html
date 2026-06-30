@@ -90,6 +90,8 @@ h1 { font-size:26px; margin-bottom:8px; color:#00d4ff; text-shadow:0 0 10px #00d
 .map-card.dungeon:hover, .map-card.dungeon.selected { border-color:#cc88ff; box-shadow:0 8px 28px #660088aa; }
 .map-card.city  { background:linear-gradient(160deg,#0a1a2a,#1a2a4a,#0a2a3a); }
 .map-card.city:hover, .map-card.city.selected  { border-color:#00ffcc; box-shadow:0 8px 28px #006644aa; }
+.map-card.racing { background:linear-gradient(160deg,#1a0a0a,#2a1010,#1a1a1a); }
+.map-card.racing:hover, .map-card.racing.selected { border-color:#ff4400; box-shadow:0 8px 28px #ff440088; }
 .map-card .map-icon { font-size:36px; margin-bottom:8px; }
 .map-card .map-name { font-size:16px; font-weight:bold; margin-bottom:4px; }
 .map-card .map-desc { font-size:11px; color:#ccc; line-height:1.4; }
@@ -308,6 +310,12 @@ h1 { font-size:26px; margin-bottom:8px; color:#00d4ff; text-shadow:0 0 10px #00d
       <div class="map-name">도시</div>
       <div class="map-desc">1.5배 빠른 속도<br>반응이 전부다!</div>
     </div>
+    <div class="map-card racing" data-map="racing" id="card-racing">
+      <span class="map-tag">부스트</span>
+      <div class="map-icon">🏁</div>
+      <div class="map-name">레이싱</div>
+      <div class="map-desc">트랙을 누벼라<br>⛽ 기름 먹으면 2배속!</div>
+    </div>
     <!-- P2 overlay on cards -->
     <div id="p2WaitLabel" class="hidden">상대방이 맵을 선택 중입니다...</div>
   </div>
@@ -437,7 +445,7 @@ let isMyMobile = /Mobile|Android|iPhone|iPad/i.test(navigator.userAgent);
 let serverTimeOffset = 0; // Date.now() - serverTime
 let gameStarted = false;
 let homeCardIdx = 0;
-const MAP_ORDER = ['village','ice','space','desert','dungeon','city'];
+const MAP_ORDER = ['village','ice','space','desert','dungeon','city','racing'];
 let lanIP = location.host;
 let pendingPick = null; // pickPlayer 메시지 (로딩 완료 후 표시)
 
@@ -530,6 +538,7 @@ function applyState(msg) {
   gs.spaceDangerAt = (msg.spaceDangerAt || 0) + offset;
   gs.spaceWallLayer = msg.spaceWallLayer || 0;
   gs.desertWind = msg.desertWind || null;
+  gs.fuelStations = msg.fuelStations || null;
 
   if (msg.map) {
     gs.map = msg.map;
@@ -543,7 +552,7 @@ function applyState(msg) {
     gs.mapId = msg.mapId;
     gs.stars = [];
     for (let i = 0; i < 60; i++) gs.stars.push({ x: Math.random()*CANVAS_W, y: Math.random()*CANVAS_H, r: Math.random()*1.5+0.5, b: Math.random() });
-    document.getElementById('mapLabel').textContent = { village:'🌿 빌리지', ice:'❄️ 아이스', space:'🚀 우주', desert:'🏜️ 사막', dungeon:'🏰 던전', city:'🌆 도시' }[msg.mapId] || '';
+    document.getElementById('mapLabel').textContent = { village:'🌿 빌리지', ice:'❄️ 아이스', space:'🚀 우주', desert:'🏜️ 사막', dungeon:'🏰 던전', city:'🌆 도시', racing:'🏁 레이싱' }[msg.mapId] || '';
   }
   if (!gs.mapId) gs.mapId = msg.mapId;
 
@@ -915,6 +924,7 @@ function gameLoop(ts) {
 function render(ts) {
   ctx.clearRect(0, 0, CANVAS_W, CANVAS_H);
   drawBackground(ts);
+  drawFuelStations(ts);
   drawExplosionsBottom(ts);
   drawTiles(ts);
   drawItems(ts);
@@ -978,6 +988,17 @@ function drawBackground(ts) {
     ctx.lineWidth = 1;
     for (let r = 0; r <= ROWS; r++) { ctx.beginPath(); ctx.moveTo(0,r*TILE); ctx.lineTo(CANVAS_W,r*TILE); ctx.stroke(); }
     for (let c = 0; c <= COLS; c++) { ctx.beginPath(); ctx.moveTo(c*TILE,0); ctx.lineTo(c*TILE,CANVAS_H); ctx.stroke(); }
+  } else if (m === 'racing') {
+    // 체커 바닥
+    for (let r = 0; r < ROWS; r++) for (let c = 0; c < COLS; c++) {
+      ctx.fillStyle = (r+c)%2===0 ? '#2a2a2a' : '#1a1a1a';
+      ctx.fillRect(c*TILE, r*TILE, TILE, TILE);
+    }
+    // 내부 섬 (트랙 안쪽) 다른 색
+    for (let r = 3; r <= 9; r++) for (let c = 4; c <= 10; c++) {
+      ctx.fillStyle = (r+c)%2===0 ? '#1a2a10' : '#142008';
+      ctx.fillRect(c*TILE, r*TILE, TILE, TILE);
+    }
   } else {
     ctx.fillStyle = '#04040e';
     ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
@@ -1028,6 +1049,14 @@ function drawWall(m, x, y, r, c) {
     ctx.fillStyle='#1a2a3a'; ctx.fillRect(x,y,TILE,TILE);
     ctx.fillStyle='#2a3a4e'; ctx.fillRect(x+2,y+2,TILE-4,TILE-4);
     ctx.strokeStyle='#00ffcc44'; ctx.lineWidth=1; ctx.strokeRect(x+1,y+1,TILE-2,TILE-2);
+  } else if (m === 'racing') {
+    // 트랙 외곽 가드레일 / 내부 섬 벽
+    ctx.fillStyle='#cc2200'; ctx.fillRect(x,y,TILE,TILE);
+    ctx.fillStyle='#ffffff';
+    ctx.fillRect(x,y,TILE,4); ctx.fillRect(x,y+TILE-4,TILE,4);
+    ctx.fillRect(x,y,4,TILE); ctx.fillRect(x+TILE-4,y,4,TILE);
+    const bx=8, by2=8;
+    ctx.fillStyle='#aa1100'; ctx.fillRect(x+bx,y+by2,TILE-bx*2,TILE-by2*2);
   } else {
     if (!spr('terrain_rock',v*32,0,32,32,x,y,TILE,TILE)) {
       ctx.fillStyle='#2a2a3a'; ctx.fillRect(x,y,TILE,TILE);
@@ -1081,6 +1110,11 @@ function drawBox(m, x, y, r, c, ts) {
     ctx.strokeStyle='#00ffcc88'; ctx.lineWidth=1; ctx.strokeRect(x+2,y+2,TILE-4,TILE-4);
     ctx.font='16px Arial'; ctx.textAlign='center'; ctx.textBaseline='middle';
     ctx.fillText('📦', x+TILE/2, y+TILE/2);
+  } else if (m === 'racing') {
+    ctx.fillStyle='#555'; ctx.fillRect(x+3,y+3,TILE-6,TILE-6);
+    ctx.strokeStyle='#ff6600'; ctx.lineWidth=2; ctx.strokeRect(x+3,y+3,TILE-6,TILE-6);
+    ctx.font='16px Arial'; ctx.textAlign='center'; ctx.textBaseline='middle';
+    ctx.fillText('🚧', x+TILE/2, y+TILE/2);
   }
 }
 
@@ -1214,14 +1248,40 @@ function drawPlayers(ts) {
     const sprKey = `char_${moving?'walk':'idle'}_${dir}`;
     const fi = moving ? Math.floor((p.walkCycle||0)*6)%4 : Math.floor(ts/250)%4;
 
+    // 부스트 이펙트
+    const isBoosted = gs.mapId === 'racing' && p.boostEndAt && (p.boostEndAt - Date.now()) > 0;
+    if (isBoosted) {
+      ctx.save();
+      ctx.shadowColor = '#ffcc00';
+      ctx.shadowBlur = 20;
+      const streak = 10;
+      ctx.strokeStyle = `rgba(255,200,0,0.5)`;
+      ctx.lineWidth = 3;
+      ctx.beginPath(); ctx.moveTo(px - fd.x*streak, py - fd.y*streak - 8); ctx.lineTo(px - fd.x*streak*2.5, py - fd.y*streak*2.5 - 8); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(px - fd.x*streak, py - fd.y*streak + 8); ctx.lineTo(px - fd.x*streak*2.5, py - fd.y*streak*2.5 + 8); ctx.stroke();
+      ctx.restore();
+    }
+
     if (spr(sprKey,fi*32,0,32,32,px-TILE/2,py-TILE/2,TILE,TILE)) {
       ctx.save();
-      ctx.fillStyle = p.color;
+      ctx.fillStyle = isBoosted ? '#ffcc00' : p.color;
       ctx.font = 'bold 10px Arial'; ctx.textAlign='center'; ctx.textBaseline='middle';
       ctx.fillText(`P${p.id}`, px, py-TILE/2-6);
+      if (isBoosted) {
+        ctx.font = 'bold 9px Arial';
+        ctx.fillStyle = '#ffcc00';
+        ctx.fillText('⚡BOOST', px, py-TILE/2-18);
+      }
       ctx.restore();
     } else {
       drawPlayerCanvas(p, px, py, ts, moving, fd);
+      if (isBoosted) {
+        ctx.save();
+        ctx.fillStyle = '#ffcc00';
+        ctx.font = 'bold 9px Arial'; ctx.textAlign='center'; ctx.textBaseline='middle';
+        ctx.fillText('⚡BOOST', px, py-TILE/2-18);
+        ctx.restore();
+      }
     }
 
     // Trap bubble
@@ -1334,6 +1394,44 @@ function drawSpaceDanger(ts) {
     ctx.fillStyle = `rgba(255,80,80,${0.7+0.3*Math.sin(ts/150)})`;
     ctx.font = 'bold 18px Arial'; ctx.textAlign='center'; ctx.textBaseline='middle';
     ctx.fillText(`⚠ 구역 축소 ${tLeft}초 전 ⚠`, CANVAS_W/2, CANVAS_H/2);
+  }
+}
+
+// =============================================
+// Fuel stations (racing map)
+// =============================================
+function drawFuelStations(ts) {
+  if (gs.mapId !== 'racing' || !gs.fuelStations) return;
+  for (const fs of gs.fuelStations) {
+    const x = fs.c * TILE, y = fs.r * TILE;
+    if (fs.active) {
+      // 발광 노란 타일
+      const pulse = 0.6 + 0.4 * Math.sin(ts / 300);
+      ctx.save();
+      ctx.shadowColor = '#ffcc00';
+      ctx.shadowBlur = 18 * pulse;
+      ctx.fillStyle = `rgba(255,200,0,${0.25 * pulse})`;
+      ctx.fillRect(x, y, TILE, TILE);
+      ctx.restore();
+      ctx.strokeStyle = `rgba(255,200,0,${0.8 * pulse})`;
+      ctx.lineWidth = 2;
+      ctx.strokeRect(x+2, y+2, TILE-4, TILE-4);
+      ctx.font = `${TILE*0.55}px Arial`;
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText('⛽', x+TILE/2, y+TILE/2);
+    } else {
+      // 충전 중 (회색)
+      ctx.fillStyle = 'rgba(80,80,80,0.4)';
+      ctx.fillRect(x, y, TILE, TILE);
+      ctx.strokeStyle = '#555';
+      ctx.lineWidth = 1;
+      ctx.strokeRect(x+2, y+2, TILE-4, TILE-4);
+      ctx.font = `${TILE*0.45}px Arial`;
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.globalAlpha = 0.4;
+      ctx.fillText('⛽', x+TILE/2, y+TILE/2);
+      ctx.globalAlpha = 1;
+    }
   }
 }
 
