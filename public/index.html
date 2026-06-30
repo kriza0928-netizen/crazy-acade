@@ -429,7 +429,16 @@ function tileVar(r,c,max){ return (r*13+c*7)%max; }
 // Game state (display only, set by server)
 // =============================================
 let gs={ map:null, players:[], balloons:[], explosions:[], items:[], over:false, winner:-1, mapId:null,
-         spacePhase:0, spaceDanger:false, spaceDangerAt:0, spaceWallLayer:0, stars:[], desertWind:null };
+         spacePhase:0, spaceDanger:false, spaceDangerAt:0, spaceWallLayer:0, stars:[], desertWind:null,
+         mode:null, phase:null, countdownAt:0, cars:[], bananas:[], boostPads:[] };
+
+// Racing constants (must match server)
+const RACE_CX=330, RACE_CY=286;
+const RACE_OUTER_A=278, RACE_OUTER_B=208;
+const RACE_INNER_A=158, RACE_INNER_B=98;
+const RACE_TOTAL_LAPS=3;
+const RACE_CAR_W=22, RACE_CAR_H=36;
+const RACE_CPS=[{x:580,y:286},{x:330,y:476},{x:80,y:286},{x:330,y:96}];
 
 // offscreen canvas for dungeon darkness
 const dungeonCanvas = document.createElement('canvas');
@@ -525,6 +534,25 @@ ws.onclose = () => {
 // =============================================
 function applyState(msg) {
   serverTimeOffset = Date.now() - msg.serverTime;
+
+  if (msg.mode === 'racing') {
+    gs.mode = 'racing'; gs.mapId = 'racing';
+    gs.phase = msg.phase;
+    gs.countdownAt = (msg.countdownAt || 0) + serverTimeOffset;
+    gs.cars = msg.cars || [];
+    gs.bananas = msg.bananas || [];
+    gs.boostPads = msg.boostPads || [];
+    gs.over = msg.over; gs.winner = msg.winner;
+    if (!gameStarted) {
+      gameStarted = true;
+      showScreen('game');
+      document.getElementById('mapLabel').textContent = '🏁 레이싱';
+      bgmPlay();
+    }
+    if (msg.over) showRacingOver(msg.winner);
+    return;
+  }
+
   const offset = serverTimeOffset;
 
   gs.players = msg.players;
@@ -917,12 +945,16 @@ document.getElementById('homeBtn').addEventListener('click', () => {
 // Render loop (client-side, 60fps)
 // =============================================
 function gameLoop(ts) {
-  if (gs.mapId && gs.map) render(ts);
+  if (gs.mode === 'racing' || (gs.mapId && gs.map)) render(ts);
   requestAnimationFrame(gameLoop);
 }
 
 function render(ts) {
   ctx.clearRect(0, 0, CANVAS_W, CANVAS_H);
+  if (gs.mode === 'racing') {
+    renderRacing(ts);
+    return;
+  }
   drawBackground(ts);
   drawFuelStations(ts);
   drawExplosionsBottom(ts);
@@ -1497,6 +1529,265 @@ function drawDungeonDarkness(ts) {
   ctx.fillStyle = '#ff8800';
   ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
   ctx.restore();
+}
+
+// =============================================
+// Racing render
+// =============================================
+function renderRacing(ts) {
+  drawRaceTrack(ts);
+  drawRaceItems(ts);
+  drawRaceCars(ts);
+  drawRaceCountdown(ts);
+  drawRaceHUD(ts);
+}
+
+function drawRaceTrack(ts) {
+  // 전체 잔디 배경
+  ctx.fillStyle = '#2a5a10';
+  ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
+
+  // 아스팔트 트랙 (외부 타원)
+  ctx.fillStyle = '#404040';
+  ctx.beginPath();
+  ctx.ellipse(RACE_CX, RACE_CY, RACE_OUTER_A, RACE_OUTER_B, 0, 0, Math.PI*2);
+  ctx.fill();
+
+  // 트랙 노면 질감 줄
+  ctx.strokeStyle = '#484848';
+  ctx.lineWidth = 4;
+  for (let i = 0; i < 8; i++) {
+    const a = RACE_OUTER_A - 10 - i*14, b = RACE_OUTER_B - 10 - i*14;
+    if (a < RACE_INNER_A || b < RACE_INNER_B) break;
+    ctx.globalAlpha = 0.18;
+    ctx.beginPath();
+    ctx.ellipse(RACE_CX, RACE_CY, a, b, 0, 0, Math.PI*2);
+    ctx.stroke();
+  }
+  ctx.globalAlpha = 1;
+
+  // 트랙 중앙선 (흰 점선)
+  ctx.setLineDash([14, 10]);
+  ctx.strokeStyle = 'rgba(255,255,255,0.3)';
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.ellipse(RACE_CX, RACE_CY, (RACE_OUTER_A+RACE_INNER_A)/2, (RACE_OUTER_B+RACE_INNER_B)/2, 0, 0, Math.PI*2);
+  ctx.stroke();
+  ctx.setLineDash([]);
+
+  // 내부 잔디 섬
+  ctx.fillStyle = '#1e4a0a';
+  ctx.beginPath();
+  ctx.ellipse(RACE_CX, RACE_CY, RACE_INNER_A, RACE_INNER_B, 0, 0, Math.PI*2);
+  ctx.fill();
+
+  // 내부 섬 흰 경계선
+  ctx.strokeStyle = 'rgba(255,255,255,0.5)';
+  ctx.lineWidth = 3;
+  ctx.beginPath();
+  ctx.ellipse(RACE_CX, RACE_CY, RACE_INNER_A, RACE_INNER_B, 0, 0, Math.PI*2);
+  ctx.stroke();
+
+  // 외부 흰 경계선
+  ctx.beginPath();
+  ctx.ellipse(RACE_CX, RACE_CY, RACE_OUTER_A, RACE_OUTER_B, 0, 0, Math.PI*2);
+  ctx.stroke();
+
+  // 결승선 체커 패턴
+  const sfX = 578;
+  const sq = 11;
+  for (let row = 0; row < 18; row++) {
+    const y = RACE_CY - 99 + row * sq;
+    ctx.fillStyle = row % 2 === 0 ? 'rgba(255,255,255,0.95)' : 'rgba(0,0,0,0.85)';
+    ctx.fillRect(sfX - sq/2, y, sq, sq);
+  }
+  // 깃대 + 🏁
+  ctx.fillStyle = '#ccc';
+  ctx.fillRect(sfX + sq, RACE_CY - 118, 3, 22);
+  ctx.font = '18px Arial'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText('🏁', sfX + sq + 2, RACE_CY - 128);
+
+  // 내부 섬 장식 (잔디 무늬)
+  ctx.fillStyle = '#163a08';
+  for (let i = 0; i < 6; i++) {
+    const a = RACE_INNER_A - 14 - i * 20, b = RACE_INNER_B - 8 - i * 12;
+    if (a < 10 || b < 5) break;
+    ctx.globalAlpha = 0.25;
+    ctx.beginPath();
+    ctx.ellipse(RACE_CX, RACE_CY, a, b, 0, 0, Math.PI*2);
+    ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+}
+
+function drawRaceItems(ts) {
+  // 부스트 패드 (⚡)
+  for (const bp of (gs.boostPads || [])) {
+    const pulse = 0.65 + 0.35 * Math.sin(ts / 260);
+    ctx.save();
+    if (bp.active) {
+      ctx.shadowColor = '#ffdd00'; ctx.shadowBlur = 18 * pulse;
+      ctx.globalAlpha = pulse;
+      ctx.fillStyle = `rgba(255,220,0,${0.22 * pulse})`;
+      ctx.beginPath(); ctx.arc(bp.x, bp.y, 20, 0, Math.PI*2); ctx.fill();
+    } else {
+      ctx.globalAlpha = 0.22;
+    }
+    ctx.font = '22px Arial'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText('⚡', bp.x, bp.y);
+    ctx.restore();
+  }
+
+  // 바나나 껍질 (🍌)
+  for (const b of (gs.bananas || [])) {
+    ctx.save();
+    ctx.font = '20px Arial'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText('🍌', b.x, b.y);
+    ctx.restore();
+  }
+}
+
+function drawRaceCars(ts) {
+  if (!gs.cars) return;
+  const now = Date.now();
+
+  for (let idx = 0; idx < gs.cars.length; idx++) {
+    const car = gs.cars[idx];
+    const boostActive = car.boosting && now < car.boostEnd;
+
+    ctx.save();
+    ctx.translate(car.x, car.y);
+    ctx.rotate(car.angle);
+
+    // 그림자
+    ctx.save();
+    ctx.globalAlpha = 0.28;
+    ctx.fillStyle = '#000';
+    ctx.beginPath();
+    ctx.ellipse(4, 4, RACE_CAR_W/2+2, RACE_CAR_H/2+2, 0, 0, Math.PI*2);
+    ctx.fill();
+    ctx.restore();
+
+    // 부스트 빛
+    if (boostActive) {
+      ctx.shadowColor = '#ffcc00'; ctx.shadowBlur = 20;
+    }
+
+    // 차체
+    const bodyColor = car.spinning ? car.color + '88' : car.color;
+    ctx.fillStyle = bodyColor;
+    roundRect(ctx, -RACE_CAR_W/2, -RACE_CAR_H/2, RACE_CAR_W, RACE_CAR_H, 5);
+    ctx.fill();
+
+    // 앞유리 (어두운 줄)
+    ctx.fillStyle = 'rgba(0,0,0,0.55)';
+    ctx.fillRect(-RACE_CAR_W/2+3, -RACE_CAR_H/2+7, RACE_CAR_W-6, 9);
+
+    // 헤드라이트
+    ctx.fillStyle = '#ffee88';
+    ctx.fillRect(-RACE_CAR_W/2+2, -RACE_CAR_H/2+1, 5, 4);
+    ctx.fillRect(RACE_CAR_W/2-7,  -RACE_CAR_H/2+1, 5, 4);
+
+    // 바퀴 4개
+    ctx.fillStyle = '#111';
+    [[-RACE_CAR_W/2-3,-RACE_CAR_H/2+4],[RACE_CAR_W/2-1,-RACE_CAR_H/2+4],
+     [-RACE_CAR_W/2-3, RACE_CAR_H/2-12],[RACE_CAR_W/2-1, RACE_CAR_H/2-12]].forEach(([wx,wy])=>{
+      ctx.fillRect(wx, wy, 4, 8);
+    });
+
+    ctx.restore();
+
+    // 차번호 + 상태
+    ctx.save();
+    ctx.font = 'bold 11px Arial'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillStyle = car.color;
+    ctx.fillText(`P${car.id}${car.id===1?' 🐰':' 😈'}`, car.x, car.y - RACE_CAR_H/2 - 10);
+    if (boostActive) {
+      ctx.fillStyle = '#ffcc00';
+      ctx.font = 'bold 10px Arial';
+      ctx.fillText('⚡ BOOST!', car.x, car.y - RACE_CAR_H/2 - 23);
+    }
+    if (car.spinning) {
+      ctx.fillStyle = '#ff4444';
+      ctx.font = 'bold 10px Arial';
+      ctx.fillText('💫 스핀!', car.x, car.y - RACE_CAR_H/2 - 23);
+    }
+    ctx.restore();
+  }
+}
+
+function drawRaceHUD(ts) {
+  if (!gs.cars) return;
+  // 순위 결정 (랩 수 기준)
+  const sorted = [...gs.cars].sort((a,b) => b.lap - a.lap);
+
+  gs.cars.forEach((car, idx) => {
+    const rank = sorted.indexOf(car) + 1;
+    const isLeft = idx === 0;
+    const x = isLeft ? 8 : CANVAS_W - 138;
+    const y = 8;
+
+    ctx.save();
+    ctx.fillStyle = 'rgba(0,0,0,0.65)';
+    roundRect(ctx, x, y, 130, 64, 10); ctx.fill();
+
+    ctx.fillStyle = car.color;
+    ctx.font = 'bold 13px Arial'; ctx.textAlign = 'left'; ctx.textBaseline = 'top';
+    ctx.fillText(`P${car.id} ${car.id===1?'🐰':'😈'}`, x+10, y+8);
+
+    ctx.fillStyle = '#fff';
+    ctx.font = '12px Arial';
+    const lapLabel = car.finished ? '✅ 완주!' : `${car.lap} / ${RACE_TOTAL_LAPS} 랩`;
+    ctx.fillText(lapLabel, x+10, y+26);
+
+    const spd = Math.round(Math.abs(car.speed || 0));
+    ctx.fillText(`${spd} km/h  ${rank === 1 ? '🥇' : '🥈'}위`, x+10, y+42);
+    ctx.restore();
+  });
+}
+
+function drawRaceCountdown(ts) {
+  if (gs.phase !== 'countdown') return;
+  const now = Date.now();
+  const remaining = Math.ceil((gs.countdownAt - now) / 1000);
+  if (remaining <= 0) {
+    // GO!
+    const elapsed = now - gs.countdownAt;
+    if (elapsed < 800) {
+      ctx.save();
+      ctx.globalAlpha = 1 - elapsed / 800;
+      ctx.fillStyle = '#00ff88';
+      ctx.font = 'bold 90px Arial';
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.shadowColor = '#00cc44'; ctx.shadowBlur = 30;
+      ctx.fillText('GO!', CANVAS_W/2, CANVAS_H/2);
+      ctx.restore();
+    }
+    return;
+  }
+  ctx.save();
+  ctx.fillStyle = 'rgba(0,0,0,0.55)';
+  ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
+  const scale = 1 + 0.15 * Math.sin(ts / 120);
+  ctx.font = `bold ${Math.round(110 * scale)}px Arial`;
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.shadowColor = '#ff8800'; ctx.shadowBlur = 40;
+  ctx.fillStyle = '#ffcc00';
+  ctx.fillText(remaining.toString(), CANVAS_W/2, CANVAS_H/2);
+  ctx.restore();
+}
+
+function showRacingOver(winner) {
+  const ovr = document.getElementById('overlay');
+  if (!ovr.classList.contains('hidden')) return;
+  bgmStop();
+  const txt = document.getElementById('winnerText');
+  const sub = document.getElementById('winnerSub');
+  const p = gs.cars && gs.cars[winner];
+  txt.style.color = p ? p.color : '#fff';
+  txt.textContent = `Player ${winner + 1} 1위! 🏁🏆`;
+  sub.textContent = '결승선을 통과했습니다!';
+  ovr.classList.remove('hidden');
 }
 
 // =============================================

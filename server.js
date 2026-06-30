@@ -459,7 +459,20 @@ function checkWin() {
 // Game init
 // =============================================
 function initGame(mapId) {
-  const map = mapId === 'racing' ? buildRacingMap() : buildMap();
+  if (mapId === 'racing') {
+    initRacingGame();
+    inputs = [
+      { up:false, down:false, left:false, right:false, bomb:false },
+      { up:false, down:false, left:false, right:false, bomb:false },
+    ];
+    prevInputs = [
+      { up:false, down:false, left:false, right:false, bomb:false },
+      { up:false, down:false, left:false, right:false, bomb:false },
+    ];
+    lastBalloon = [0, 0];
+    return;
+  }
+  const map = buildMap();
   gs = {
     map,
     explosions: [], balloons: [], items: [],
@@ -509,6 +522,164 @@ function initGame(mapId) {
 }
 
 // =============================================
+// Racing game engine
+// =============================================
+const RACE_CX = 330, RACE_CY = 286;
+const RACE_OUTER_A = 278, RACE_OUTER_B = 208;
+const RACE_INNER_A = 158, RACE_INNER_B = 98;
+const RACE_CAR_ACCEL = 260, RACE_CAR_FRICTION = 120, RACE_CAR_MAX_SPEED = 240;
+const RACE_TURN_RATE = 2.6;
+const RACE_TOTAL_LAPS = 3;
+const RACE_CP_RADIUS = 48;
+const RACE_CANVAS_W = COLS * TILE, RACE_CANVAS_H = ROWS * TILE;
+const RACE_CHECKPOINTS = [
+  { x: 580, y: 286 }, // CP0: 결승선 (오른쪽)
+  { x: 330, y: 476 }, // CP1: 하단
+  { x:  80, y: 286 }, // CP2: 왼쪽
+  { x: 330, y:  96 }, // CP3: 상단
+];
+
+function isOnRaceTrack(x, y) {
+  const dx = x - RACE_CX, dy = y - RACE_CY;
+  const outer = (dx / RACE_OUTER_A) ** 2 + (dy / RACE_OUTER_B) ** 2;
+  const inner = (dx / RACE_INNER_A) ** 2 + (dy / RACE_INNER_B) ** 2;
+  return outer <= 1.02 && inner >= 0.98;
+}
+
+function initRacingGame() {
+  gs = {
+    mode: 'racing', mapId: 'racing',
+    over: false, winner: -1,
+    phase: 'countdown',
+    countdownAt: Date.now() + 3000,
+    finishCount: 0,
+    cars: [
+      { id:1, x:575, y:256, angle:Math.PI, speed:0,
+        lap:0, nextCp:1, cpCooldown:0,
+        spinning:false, spinEnd:0,
+        boosting:false, boostEnd:0,
+        color:'#4a9eff', finished:false, rank:0 },
+      { id:2, x:575, y:316, angle:Math.PI, speed:0,
+        lap:0, nextCp:1, cpCooldown:0,
+        spinning:false, spinEnd:0,
+        boosting:false, boostEnd:0,
+        color:'#ff6b6b', finished:false, rank:0 },
+    ],
+    bananas: [],
+    boostPads: [
+      { x:230, y:96,  active:true, rechargeAt:0 },
+      { x:330, y:96,  active:true, rechargeAt:0 },
+      { x:430, y:96,  active:true, rechargeAt:0 },
+      { x:230, y:476, active:true, rechargeAt:0 },
+      { x:330, y:476, active:true, rechargeAt:0 },
+      { x:430, y:476, active:true, rechargeAt:0 },
+    ],
+  };
+}
+
+function checkRaceCheckpoints(car, carIdx, now) {
+  if (car.finished || now < car.cpCooldown) return;
+  const cp = RACE_CHECKPOINTS[car.nextCp];
+  if (Math.hypot(car.x - cp.x, car.y - cp.y) < RACE_CP_RADIUS) {
+    car.cpCooldown = now + 2000;
+    if (car.nextCp === 0) {
+      car.lap++;
+      if (car.lap >= RACE_TOTAL_LAPS) {
+        car.finished = true;
+        gs.finishCount++;
+        car.rank = gs.finishCount;
+        gs.over = true;
+        gs.winner = carIdx;
+        gs.phase = 'finished';
+      }
+    }
+    car.nextCp = (car.nextCp + 1) % RACE_CHECKPOINTS.length;
+  }
+}
+
+function updateRacing(now, dt) {
+  if (gs.phase === 'countdown') {
+    if (now >= gs.countdownAt) gs.phase = 'racing';
+    return;
+  }
+  if (gs.over) return;
+
+  for (let idx = 0; idx < 2; idx++) {
+    const car = gs.cars[idx];
+    if (car.finished) continue;
+    const inp = inputs[idx];
+    const prev = prevInputs[idx];
+
+    const onTrack = isOnRaceTrack(car.x, car.y);
+    const grassMult = onTrack ? 1.0 : 3.5;
+    const boostActive = car.boosting && now < car.boostEnd;
+    const maxSpeed = boostActive ? RACE_CAR_MAX_SPEED * 1.6 : onTrack ? RACE_CAR_MAX_SPEED : 80;
+
+    if (car.spinning) {
+      car.speed = Math.max(0, car.speed - RACE_CAR_FRICTION * 4 * dt);
+      car.angle += 8 * dt;
+      if (now >= car.spinEnd) car.spinning = false;
+    } else {
+      const turnFactor = Math.max(0, Math.min(1, Math.abs(car.speed) / 70));
+      if (inp.left)  car.angle -= RACE_TURN_RATE * turnFactor * dt;
+      if (inp.right) car.angle += RACE_TURN_RATE * turnFactor * dt;
+      if (inp.up) {
+        car.speed = Math.min(maxSpeed, car.speed + RACE_CAR_ACCEL * dt);
+      } else if (inp.down) {
+        car.speed = Math.max(-70, car.speed - RACE_CAR_ACCEL * 1.2 * dt);
+      } else {
+        const friction = RACE_CAR_FRICTION * grassMult * dt;
+        car.speed = car.speed > 0 ? Math.max(0, car.speed - friction) : Math.min(0, car.speed + friction);
+      }
+    }
+
+    car.x += Math.sin(car.angle) * car.speed * dt;
+    car.y -= Math.cos(car.angle) * car.speed * dt;
+    car.x = Math.max(15, Math.min(RACE_CANVAS_W - 15, car.x));
+    car.y = Math.max(15, Math.min(RACE_CANVAS_H - 15, car.y));
+
+    // 부스트 패드
+    for (const bp of gs.boostPads) {
+      if (bp.active && Math.hypot(car.x - bp.x, car.y - bp.y) < 28) {
+        car.boosting = true;
+        car.boostEnd = now + 2500;
+        bp.active = false;
+        bp.rechargeAt = now + 8000;
+      }
+    }
+    if (boostActive && now >= car.boostEnd) car.boosting = false;
+
+    // 바나나 충돌
+    gs.bananas = gs.bananas.filter(b => {
+      if (b.placedBy === idx) return true;
+      if (!car.spinning && Math.hypot(car.x - b.x, car.y - b.y) < 22) {
+        car.spinning = true;
+        car.spinEnd = now + 1800;
+        return false;
+      }
+      return true;
+    });
+
+    // 바나나 드롭 (폭탄 버튼)
+    if (inp.bomb && !prev.bomb) {
+      gs.bananas.push({
+        x: car.x - Math.sin(car.angle) * 22,
+        y: car.y + Math.cos(car.angle) * 22,
+        placedBy: idx, placedAt: now,
+      });
+    }
+
+    checkRaceCheckpoints(car, idx, now);
+  }
+
+  gs.bananas = gs.bananas.filter(b => now - b.placedAt < 12000);
+  for (const bp of gs.boostPads)
+    if (!bp.active && now >= bp.rechargeAt) bp.active = true;
+
+  for (let idx = 0; idx < 2; idx++) prevInputs[idx] = { ...inputs[idx] };
+}
+
+// =============================================
 // Broadcast helpers
 // =============================================
 function sendTo(ws, obj) {
@@ -525,6 +696,22 @@ function broadcast(obj) {
 function broadcastState() {
   if (!gs) return;
   const now = Date.now();
+
+  if (gs.mode === 'racing') {
+    broadcast({
+      type: 'state', serverTime: now,
+      mode: 'racing', mapId: 'racing',
+      phase: gs.phase,
+      countdownAt: gs.countdownAt,
+      cars: gs.cars,
+      bananas: gs.bananas,
+      boostPads: gs.boostPads,
+      over: gs.over,
+      winner: gs.winner,
+    });
+    return;
+  }
+
   const state = {
     type: 'state',
     serverTime: now,
@@ -557,13 +744,17 @@ setInterval(() => {
   const dt = Math.min((now - lastTick) / 1000, 0.05);
   lastTick = now;
 
-  handleInputs(now, dt);
-  updateBalloons(now);
-  updateExplosions(now);
-  updateTrapped(now);
-  updateMapGimmick(now);
-  updateFuelStations(now);
-  checkWin();
+  if (gs.mode === 'racing') {
+    updateRacing(now, dt);
+  } else {
+    handleInputs(now, dt);
+    updateBalloons(now);
+    updateExplosions(now);
+    updateTrapped(now);
+    updateMapGimmick(now);
+    updateFuelStations(now);
+    checkWin();
+  }
   broadcastState();
 }, 1000 / 60);
 
