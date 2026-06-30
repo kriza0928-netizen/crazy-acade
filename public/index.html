@@ -1021,16 +1021,62 @@ function drawBackground(ts) {
     for (let r = 0; r <= ROWS; r++) { ctx.beginPath(); ctx.moveTo(0,r*TILE); ctx.lineTo(CANVAS_W,r*TILE); ctx.stroke(); }
     for (let c = 0; c <= COLS; c++) { ctx.beginPath(); ctx.moveTo(c*TILE,0); ctx.lineTo(c*TILE,CANVAS_H); ctx.stroke(); }
   } else if (m === 'racing') {
-    // 체커 바닥
+    // 전체 배경: 어두운 아스팔트
+    ctx.fillStyle = '#1e1e1e';
+    ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
+
+    // 타일별 노면 질감
     for (let r = 0; r < ROWS; r++) for (let c = 0; c < COLS; c++) {
-      ctx.fillStyle = (r+c)%2===0 ? '#2a2a2a' : '#1a1a1a';
-      ctx.fillRect(c*TILE, r*TILE, TILE, TILE);
+      const x = c*TILE, y = r*TILE;
+      // 상단/하단 직선구간 (rows 1-3, 9-11)
+      const isStraight = (r>=1&&r<=3)||(r>=9&&r<=11);
+      // 코너/인필드 (rows 4-8)
+      const isCorner = r>=4&&r<=8&&(c===1||c===13);
+      const isInfield = r>=5&&r<=7&&c>=2&&c<=12;
+
+      if (isStraight) {
+        ctx.fillStyle = (r+c)%2===0 ? '#2e2e2e' : '#262626';
+        ctx.fillRect(x,y,TILE,TILE);
+        // 직선 구간 흰 선 강조 (가운데 행)
+        if ((r===2||r===10) && c>0 && c<COLS-1) {
+          ctx.fillStyle = 'rgba(255,255,100,0.07)';
+          ctx.fillRect(x,y,TILE,TILE);
+        }
+      } else if (isCorner) {
+        ctx.fillStyle = '#282828';
+        ctx.fillRect(x,y,TILE,TILE);
+      } else if (isInfield) {
+        // 인필드: 잔디
+        ctx.fillStyle = (r+c)%2===0 ? '#1e4810' : '#1a3e0c';
+        ctx.fillRect(x,y,TILE,TILE);
+      } else {
+        ctx.fillStyle = '#222';
+        ctx.fillRect(x,y,TILE,TILE);
+      }
     }
-    // 내부 섬 (트랙 안쪽) 다른 색
-    for (let r = 3; r <= 9; r++) for (let c = 4; c <= 10; c++) {
-      ctx.fillStyle = (r+c)%2===0 ? '#1a2a10' : '#142008';
-      ctx.fillRect(c*TILE, r*TILE, TILE, TILE);
+
+    // 직선 구간 중앙선 (노란 점선)
+    ctx.save();
+    ctx.strokeStyle = 'rgba(255,220,0,0.55)';
+    ctx.lineWidth = 3;
+    ctx.setLineDash([18, 12]);
+    // 상단 직선 가운데 (row 2 → y=2*TILE+TILE/2)
+    ctx.beginPath(); ctx.moveTo(TILE, 2*TILE+TILE/2); ctx.lineTo(13*TILE, 2*TILE+TILE/2); ctx.stroke();
+    // 하단 직선 가운데
+    ctx.beginPath(); ctx.moveTo(TILE, 10*TILE+TILE/2); ctx.lineTo(13*TILE, 10*TILE+TILE/2); ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.restore();
+
+    // 결승선 체커 (row 1~3, col 7)
+    for (let row = 0; row < 3; row++) {
+      for (let sq = 0; sq < 4; sq++) {
+        ctx.fillStyle = (row+sq)%2===0 ? 'rgba(255,255,255,0.9)' : 'rgba(0,0,0,0.8)';
+        ctx.fillRect(7*TILE + sq*(TILE/4), (row+1)*TILE, TILE/4, TILE);
+      }
     }
+    // 🏁 깃발
+    ctx.font = '20px Arial'; ctx.textAlign='center'; ctx.textBaseline='middle';
+    ctx.fillText('🏁', 7*TILE+TILE/2, 0.5*TILE);
   } else {
     ctx.fillStyle = '#04040e';
     ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
@@ -1082,13 +1128,19 @@ function drawWall(m, x, y, r, c) {
     ctx.fillStyle='#2a3a4e'; ctx.fillRect(x+2,y+2,TILE-4,TILE-4);
     ctx.strokeStyle='#00ffcc44'; ctx.lineWidth=1; ctx.strokeRect(x+1,y+1,TILE-2,TILE-2);
   } else if (m === 'racing') {
-    // 트랙 외곽 가드레일 / 내부 섬 벽
-    ctx.fillStyle='#cc2200'; ctx.fillRect(x,y,TILE,TILE);
-    ctx.fillStyle='#ffffff';
-    ctx.fillRect(x,y,TILE,4); ctx.fillRect(x,y+TILE-4,TILE,4);
-    ctx.fillRect(x,y,4,TILE); ctx.fillRect(x+TILE-4,y,4,TILE);
-    const bx=8, by2=8;
-    ctx.fillStyle='#aa1100'; ctx.fillRect(x+bx,y+by2,TILE-bx*2,TILE-by2*2);
+    // 타이어 배리어 느낌: 빨강/흰 줄무늬
+    const stripes = 4;
+    for (let i = 0; i < stripes; i++) {
+      ctx.fillStyle = i%2===0 ? '#cc1100' : '#ffffff';
+      ctx.fillRect(x + i*(TILE/stripes), y, TILE/stripes, TILE);
+    }
+    // 타이어 원형 장식
+    ctx.fillStyle = '#1a1a1a';
+    [[TILE*0.25,TILE*0.28],[TILE*0.75,TILE*0.28],[TILE*0.25,TILE*0.72],[TILE*0.75,TILE*0.72]].forEach(([ox,oy])=>{
+      ctx.beginPath(); ctx.arc(x+ox, y+oy, 7, 0, Math.PI*2); ctx.fill();
+      ctx.strokeStyle='#555'; ctx.lineWidth=1.5; ctx.stroke();
+    });
+    ctx.strokeStyle='rgba(0,0,0,0.5)'; ctx.lineWidth=1; ctx.strokeRect(x,y,TILE,TILE);
   } else {
     if (!spr('terrain_rock',v*32,0,32,32,x,y,TILE,TILE)) {
       ctx.fillStyle='#2a2a3a'; ctx.fillRect(x,y,TILE,TILE);
@@ -1143,10 +1195,17 @@ function drawBox(m, x, y, r, c, ts) {
     ctx.font='16px Arial'; ctx.textAlign='center'; ctx.textBaseline='middle';
     ctx.fillText('📦', x+TILE/2, y+TILE/2);
   } else if (m === 'racing') {
-    ctx.fillStyle='#555'; ctx.fillRect(x+3,y+3,TILE-6,TILE-6);
-    ctx.strokeStyle='#ff6600'; ctx.lineWidth=2; ctx.strokeRect(x+3,y+3,TILE-6,TILE-6);
-    ctx.font='16px Arial'; ctx.textAlign='center'; ctx.textBaseline='middle';
-    ctx.fillText('🚧', x+TILE/2, y+TILE/2);
+    // 타이어 스택 박스
+    ctx.fillStyle='#222'; ctx.fillRect(x+2,y+2,TILE-4,TILE-4);
+    // 타이어 4개 그리기
+    [[0.28,0.28],[0.72,0.28],[0.28,0.72],[0.72,0.72]].forEach(([rx,ry])=>{
+      ctx.beginPath(); ctx.arc(x+TILE*rx,y+TILE*ry,10,0,Math.PI*2);
+      ctx.fillStyle='#333'; ctx.fill();
+      ctx.strokeStyle='#ff6600'; ctx.lineWidth=2; ctx.stroke();
+      ctx.beginPath(); ctx.arc(x+TILE*rx,y+TILE*ry,4,0,Math.PI*2);
+      ctx.fillStyle='#111'; ctx.fill();
+    });
+    ctx.strokeStyle='#444'; ctx.lineWidth=1; ctx.strokeRect(x+2,y+2,TILE-4,TILE-4);
   }
 }
 

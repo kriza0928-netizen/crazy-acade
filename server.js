@@ -57,22 +57,40 @@ let localMode = false; // true when single PC holds both slots
 // Map generation
 // =============================================
 function buildRacingMap() {
+  // 모든 타일 빈칸으로 시작
   const map = Array.from({length: ROWS}, () => Array(COLS).fill(T_EMPTY));
+
   // 외곽 벽
   for (let r = 0; r < ROWS; r++)
     for (let c = 0; c < COLS; c++)
-      if (r===0 || r===ROWS-1 || c===0 || c===COLS-1) map[r][c] = T_WALL;
-  // 내부 섬 (트랙 안쪽)
-  for (let r = 3; r <= 9; r++)
-    for (let c = 4; c <= 10; c++)
-      map[r][c] = T_WALL;
-  // 트랙 위에 박스 (스폰/연료소 주변 제외)
+      if (r===0||r===ROWS-1||c===0||c===COLS-1) map[r][c] = T_WALL;
+
+  // 상단 직선 기둥 (row 2)
+  for (let c = 2; c <= 12; c += 2) map[2][c] = T_WALL;
+
+  // 하단 직선 기둥 (row 10)
+  for (let c = 2; c <= 12; c += 2) map[10][c] = T_WALL;
+
+  // 내부 상단 벽 (row 4): c=2~12, 통로 c=5, c=9
+  for (let c = 2; c <= 12; c++)
+    if (c !== 5 && c !== 9) map[4][c] = T_WALL;
+
+  // 내부 하단 벽 (row 8): 같은 패턴
+  for (let c = 2; c <= 12; c++)
+    if (c !== 5 && c !== 9) map[8][c] = T_WALL;
+
+  // 인필드 기둥 (rows 5-7)
+  map[5][7] = T_WALL;
+  map[7][7] = T_WALL;
+
+  // 박스 배치 (스폰·연료소 주변 제외, 낮은 밀도)
   const safe = [[1,1],[1,2],[2,1],[11,13],[11,12],[10,13],[1,7],[11,7]];
   const isSafe = (r,c) => safe.some(([sr,sc])=>sr===r&&sc===c);
   for (let r = 1; r < ROWS-1; r++)
     for (let c = 1; c < COLS-1; c++)
-      if (map[r][c]===T_EMPTY && !isSafe(r,c) && Math.random()<0.30)
+      if (map[r][c]===T_EMPTY && !isSafe(r,c) && Math.random()<0.26)
         map[r][c] = T_BOX;
+
   return map;
 }
 
@@ -459,20 +477,7 @@ function checkWin() {
 // Game init
 // =============================================
 function initGame(mapId) {
-  if (mapId === 'racing') {
-    initRacingGame();
-    inputs = [
-      { up:false, down:false, left:false, right:false, bomb:false },
-      { up:false, down:false, left:false, right:false, bomb:false },
-    ];
-    prevInputs = [
-      { up:false, down:false, left:false, right:false, bomb:false },
-      { up:false, down:false, left:false, right:false, bomb:false },
-    ];
-    lastBalloon = [0, 0];
-    return;
-  }
-  const map = buildMap();
+  const map = mapId === 'racing' ? buildRacingMap() : buildMap();
   gs = {
     map,
     explosions: [], balloons: [], items: [],
@@ -697,21 +702,6 @@ function broadcastState() {
   if (!gs) return;
   const now = Date.now();
 
-  if (gs.mode === 'racing') {
-    broadcast({
-      type: 'state', serverTime: now,
-      mode: 'racing', mapId: 'racing',
-      phase: gs.phase,
-      countdownAt: gs.countdownAt,
-      cars: gs.cars,
-      bananas: gs.bananas,
-      boostPads: gs.boostPads,
-      over: gs.over,
-      winner: gs.winner,
-    });
-    return;
-  }
-
   const state = {
     type: 'state',
     serverTime: now,
@@ -744,17 +734,13 @@ setInterval(() => {
   const dt = Math.min((now - lastTick) / 1000, 0.05);
   lastTick = now;
 
-  if (gs.mode === 'racing') {
-    updateRacing(now, dt);
-  } else {
-    handleInputs(now, dt);
-    updateBalloons(now);
-    updateExplosions(now);
-    updateTrapped(now);
-    updateMapGimmick(now);
-    updateFuelStations(now);
-    checkWin();
-  }
+  handleInputs(now, dt);
+  updateBalloons(now);
+  updateExplosions(now);
+  updateTrapped(now);
+  updateMapGimmick(now);
+  updateFuelStations(now);
+  checkWin();
   broadcastState();
 }, 1000 / 60);
 
